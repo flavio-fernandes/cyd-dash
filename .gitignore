@@ -1,0 +1,13 @@
+# Private working files (handoff, plans, reports, photos): never published.
+local/
+HANDOFF.md
+photos/
+*.jpg.tmp
+firmware/site.yaml
+firmware/secrets.yaml
+firmware/bindings.yaml
+firmware/.esphome/
+firmware/version/generated.h
+__pycache__/
+firmware/cyd-dash-public.yaml
+firmware/generated/

@@ -1,0 +1,25 @@
+# A digits-only hero font keeps the larger reading compact in flash.
+font:
+  - file: gfonts://Montserrat
+    id: thermostat_digits
+    size: 48
+    glyphs: "0123456789.-"
+# The font holders compile in the sizes used by thermostat.h, in this order.
+lvgl:
+  pages:
+    - id: thermostat_page
+      bg_color: 0x101820
+      widgets:
+        - obj:
+            id: thermostat_root
+            width: 320
+            height: 240
+            pad_all: 0
+            border_width: 0
+            bg_opa: TRANSP
+            widgets:
+              - label: {hidden: true, text: "", text_font: montserrat_16}
+              - label: {hidden: true, text: "", text_font: montserrat_20}
+              - label: {hidden: true, text: "", text_font: thermostat_digits}
+              # Enable the arc feature before creating one in C++.
+              - arc: {hidden: true, adjustable: false}

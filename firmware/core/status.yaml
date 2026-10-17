@@ -1,0 +1,80 @@
+globals:
+  - {id: boots, type: uint32_t, restore_value: true, initial_value: '0'}
+  - {id: reset_reason, type: 'std::string', initial_value: '"unknown"'}
+  - {id: broker_seen, type: bool, initial_value: 'false'}
+  - {id: reconnects, type: uint32_t, initial_value: '0'}
+  - {id: disconnected_at, type: uint32_t, initial_value: '0'}
+  - {id: broker_since, type: uint32_t, initial_value: '0'}
+  - {id: message_age, type: uint32_t, initial_value: '0'}
+  - {id: data_state, type: 'std::string', initial_value: '"waiting"'}
+script:
+  - id: publish_status
+    then:
+      - lambda: |-
+          if (!cyd_net::connected()) return;
+          cyd_net::publish_json("${topic_prefix}/status", [&](JsonObject root) {
+            root["online"] = true;
+            root["marker"] = "${marker}";
+            root["git"] = CYD_GIT_REV;
+            root["reset_reason"] = id(reset_reason);
+            root["boots"] = id(boots);
+            root["state"] = id(data_state);
+            root["seq"] = cyd_feed::seq;
+            root["msg_age"] = id(message_age);
+            root["page"] = cyd_pages::name(id(page_idx));
+            root["page_idx"] = id(page_idx);
+            root["mode"] = id(auto_mode) ? "auto" : "pin";
+            root["interval"] = id(rotation_interval);
+            root["screen"] = id(sleeping) ? "sleep" : (id(saver_on) ? "saver" : "on");
+            root["idle"] = (millis() - id(last_touch)) / 1000;
+            root["calib_step"] = id(calib_step);
+            root["saver_steps"] = cyd_saver::steps;
+            root["overlay"] = id(overlay_visible);
+            root["drift"] = id(drift_enabled);
+            root["saver_after"] = id(saver_after);
+            root["heap"] = cyd_device::free_heap();
+            root["heap_min"] = cyd_device::min_free_heap();
+            root["uptime"] = cyd_device::uptime();
+            root["reconnects"] = id(reconnects);
+            root["rssi"] = isnan(id(wifi_rssi).state) ? 0 : int(id(wifi_rssi).state);
+            auto c = root["calib"].to<JsonArray>();
+            for (int i = 0; i < 4; i++) c.add(id(touch_cal)[i]);
+            root["calib_flags"] = id(touch_cal)[4];
+            root["calib_result"] = id(calib_result);
+            root["drift_x"] = id(drift_x);
+            root["drift_y"] = id(drift_y);
+            root["refr_n"] = cyd_perf::last_n;
+            root["refr_ms"] = roundf(cyd_perf::refr_ms() * 10) / 10;
+            root["refr_max_ms"] = roundf(cyd_perf::last_max / 100.0f) / 10;
+            root["busy"] = roundf(cyd_perf::busy_pct() * 10) / 10;
+            root["inv_px"] = cyd_perf::last_n ? cyd_perf::last_px / cyd_perf::last_n : 0;
+            // Touch and nav evidence (C7c, core/tap.h).
+            auto &tap = cyd_tap::state;
+            root["touch"]["touches"] = tap.touches; root["touch"]["bounces"] = tap.bounces;
+            root["touch"]["gap_min"] = tap.gap_min;
+            root["touch"]["navs"] = tap.navs; root["touch"]["ignored"] = tap.ignored; root["touch"]["unarmed"] = tap.unarmed;
+            root["touch"]["last"] = tap.last; root["touch"]["src"] = tap.src; root["touch"]["last_at"] = tap.last_at / 1000;
+            // "pages" (the build's page list), then each page's own fields (status hooks).
+            cyd_pages::status(root);
+          }, 0, true);
+interval:
+  - interval: 60s
+    then:
+      - script.execute: publish_status
+      - lambda: |-
+          ESP_LOGI("cyd", "RESOURCES uptime=%u heap=%u heap_min=%u", (unsigned) (millis() / 1000), (unsigned) cyd_device::free_heap(), (unsigned) cyd_device::min_free_heap());
+  - interval: 1s
+    then:
+      - lambda: |-
+          cyd_perf::roll_window();
+          // Data state from the core feed: the last message on any bound topic or page topic.
+          auto old = id(data_state);
+          if (!cyd_feed::received) id(data_state) = "waiting";
+          else {
+            auto now = id(wall_clock).now();
+            id(message_age) = now.is_valid() && cyd_feed::ts >= 0 ? uint32_t(std::max(int64_t(0), int64_t(now.timestamp) - cyd_feed::ts))
+                                                                  : (millis() - cyd_feed::at) / 1000;
+            bool disconnected = id(disconnected_at) && millis() - id(disconnected_at) > 1200000;
+            id(data_state) = (id(message_age) > 1200 || disconnected) ? "stale" : "fresh";
+          }
+          if (old != id(data_state)) id(publish_status).execute();

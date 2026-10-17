@@ -1,0 +1,6 @@
+# Defaults for site.yaml's optional substitutions. cyd-dash.yaml lists this package before
+# site, and in ESPHome a later package overrides an earlier one: the same key in site.yaml wins.
+substitutions:
+  # How long the CYD waits for its broker before it restarts. 0s never restarts: use it while
+  # you have no broker (the Hello World and device pages need none).
+  mqtt_reboot_timeout: 30min

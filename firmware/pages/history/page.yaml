@@ -1,0 +1,22 @@
+# The same digits-only 48 px font recipe as the thermostat, independently selectable.
+font:
+  - file: gfonts://Montserrat
+    id: history_digits
+    size: 48
+    glyphs: "0123456789.-"
+lvgl:
+  pages:
+    - id: history_page
+      bg_color: 0x101820
+      widgets:
+        - obj:
+            id: history_root
+            width: 320
+            height: 240
+            pad_all: 0
+            border_width: 0
+            bg_opa: TRANSP
+            widgets:
+              - label: {hidden: true, text: "", text_font: montserrat_16}
+              - label: {hidden: true, text: "", text_font: montserrat_20}
+              - label: {hidden: true, text: "", text_font: history_digits}

@@ -1,0 +1,53 @@
+name: usage
+title: Usage
+description: One or two labelled gauges with 5-hour usage and optional weekly usage.
+rotate: true
+slots:
+  gauge1_label: {type: text, required: true, doc: Gauge heading.}
+  gauge1_used_pct: {type: number, required: true, unit: '%'}
+  gauge1_resets_at: {type: epoch, required: true}
+  gauge1_weekly_pct: {type: number}
+  gauge1_weekly_resets_at: {type: epoch}
+  gauge1_cap_pct: {type: number}
+  gauge1_base_cap_pct: {type: number}
+  gauge1_donated_pct: {type: number}
+  gauge1_snoozed: {type: bool}
+  gauge1_auth: {type: text, doc: Omit when authentication does not apply; ok means signed in.}
+  gauge1_inferred: {type: bool}
+  gauge1_limit_reached: {type: bool, doc: The feed reports a hard limit even below the cap.}
+  gauge1_measured_at: {type: epoch, doc: When these numbers were measured; separate from feed freshness.}
+  gauge1_old_after: {type: number, default: 1800, doc: Seconds before a measurement dims; defaults to 1800.}
+  gauge1_weekly_cap_pct: {type: number, doc: Effective weekly cap; colours and tick follow this allowance.}
+  gauge1_weekly_base_cap_pct: {type: number, doc: Weekly cap without a donation.}
+  gauge1_weekly_donated_pct: {type: number, doc: Positive weekly donation highlights the allowance in violet.}
+  gauge1_donated_until: {type: epoch, doc: Donation end; both windows return to their base caps at this time.}
+  gauge1_updated_at: {type: epoch, doc: Optional feed update time; otherwise slot arrival times are used.}
+  gauge2_label: {type: text}
+  gauge2_used_pct: {type: number}
+  gauge2_resets_at: {type: epoch}
+  gauge2_weekly_pct: {type: number}
+  gauge2_weekly_resets_at: {type: epoch}
+  gauge2_cap_pct: {type: number}
+  gauge2_base_cap_pct: {type: number}
+  gauge2_donated_pct: {type: number}
+  gauge2_snoozed: {type: bool}
+  gauge2_auth: {type: text}
+  gauge2_inferred: {type: bool}
+  gauge2_limit_reached: {type: bool, doc: The feed reports a hard limit even below the cap.}
+  gauge2_measured_at: {type: epoch, doc: When these numbers were measured; separate from feed freshness.}
+  gauge2_old_after: {type: number, default: 1800, doc: Seconds before a measurement dims; defaults to 1800.}
+  gauge2_weekly_cap_pct: {type: number, doc: Effective weekly cap; colours and tick follow this allowance.}
+  gauge2_weekly_base_cap_pct: {type: number, doc: Weekly cap without a donation.}
+  gauge2_weekly_donated_pct: {type: number, doc: Positive weekly donation highlights the allowance in violet.}
+  gauge2_donated_until: {type: epoch, doc: Donation end; both windows return to their base caps at this time.}
+  gauge2_updated_at: {type: epoch}
+optional_groups:
+  gauge2:
+    required: [gauge2_label, gauge2_used_pct, gauge2_resets_at]
+    members: [gauge2_label, gauge2_used_pct, gauge2_resets_at, gauge2_weekly_pct, gauge2_weekly_resets_at, gauge2_cap_pct, gauge2_base_cap_pct, gauge2_donated_pct, gauge2_snoozed, gauge2_auth, gauge2_inferred, gauge2_updated_at, gauge2_limit_reached, gauge2_measured_at, gauge2_old_after, gauge2_weekly_cap_pct, gauge2_weekly_base_cap_pct, gauge2_weekly_donated_pct, gauge2_donated_until]
+headers: [countdown_colour.h, usage_slots.h, usage.h]
+hooks:
+  build: cyd_usage::build_page
+  tick10: cyd_usage::tick10
+  status: cyd_usage::status
+  selftest: cyd_usage::selftest

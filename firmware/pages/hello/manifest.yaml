@@ -1,0 +1,12 @@
+# Folder name, namespace, widget ids and hooks must use the same page name.
+name: hello
+title: Hello World
+description: A greeting, the local time and a small stepped dot.
+rotate: true
+# No MQTT inputs; the clock is supplied by the core.
+slots: {}
+headers: [hello.h]
+hooks:
+  build: cyd_hello::build
+  render: cyd_hello::render
+  tick10: cyd_hello::tick10

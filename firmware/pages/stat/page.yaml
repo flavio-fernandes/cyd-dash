@@ -1,0 +1,23 @@
+# A digits-only hero font keeps the large number compact in flash.
+font:
+  - file: gfonts://Montserrat
+    id: stat_digits
+    size: 48
+    glyphs: "0123456789.-"
+# The font holders compile in the sizes used by stat.h, in this order.
+lvgl:
+  pages:
+    - id: stat_page
+      bg_color: 0x101820
+      widgets:
+        - obj:
+            id: stat_root
+            width: 320
+            height: 240
+            pad_all: 0
+            border_width: 0
+            bg_opa: TRANSP
+            widgets:
+              - label: {hidden: true, text: "", text_font: montserrat_16}
+              - label: {hidden: true, text: "", text_font: montserrat_20}
+              - label: {hidden: true, text: "", text_font: stat_digits}

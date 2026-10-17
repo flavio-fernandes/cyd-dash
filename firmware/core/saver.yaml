@@ -1,0 +1,36 @@
+# Screensaver (docs/cyd-ui.md §6): part of the core, never in the page list or the rotation.
+# The widgets live in core/saver.h (cyd_saver::build, from the main on_boot), timing in
+# core/ui.yaml.
+script:
+  - id: saver_render
+    then:
+      - lambda: |-
+          auto t = id(wall_clock).now();
+          int64_t now = t.is_valid() ? int64_t(t.timestamp) : -1;
+          std::string clock = t.is_valid() ? t.strftime("%H:%M") : std::string("--:--");
+          cyd_saver::render(now, cyd_feed::state_of(id(data_state)), clock);
+interval:
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: return id(saver_on) && !id(sleeping);
+          then:
+            - script.execute: saver_render
+lvgl:
+  pages:
+    - id: saver_page
+      bg_color: 0x000000
+      widgets:
+        - obj:
+            id: saver_root
+            x: 0
+            y: 0
+            width: 320
+            height: 240
+            pad_all: 0
+            border_width: 0
+            bg_opa: TRANSP
+            widgets:
+              # Font holder (first child): it compiles the 32 px font in for the clock.
+              - label: {hidden: true, id: saver_f32, text: "", text_font: montserrat_32}

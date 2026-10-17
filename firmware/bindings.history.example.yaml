@@ -1,0 +1,7 @@
+history:
+  value: {topic: home/livingroom/temperature}
+  label: {value: Living room}
+  unit: {value: '°C'}
+  seed: {topic: home/livingroom/history}
+  warn: {value: 25}
+  alert: {value: 28}

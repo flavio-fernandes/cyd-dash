@@ -1,0 +1,22 @@
+name: history
+title: History
+description: A time-bucketed reading with a gradient area graph.
+rotate: true
+slots:
+  value: {type: number, required: true, doc: 'Current reading; finite values within +/-1000000.'}
+  label: {type: text, default: History, doc: Graph heading.}
+  unit: {type: text, doc: Optional display unit; values are not converted.}
+  min: {type: number, doc: Optional lower scale bound.}
+  max: {type: number, doc: Optional upper scale bound; invalid bound pairs use automatic scaling.}
+  warn: {type: number, doc: Values at or above this threshold are amber.}
+  alert: {type: number, doc: Values at or above this threshold are red with an Alert label.}
+  seed: {type: text, doc: 'One initial JSON array, oldest first: numbers or [epoch, value] pairs; at most 241 entries.'}
+  window: {type: number, default: 7200, unit: s, doc: 'Time span, clamped to 60..86400 seconds; changing it clears history.'}
+  period: {type: number, default: 60, unit: s, doc: 'Bucket duration; raised if needed to keep at most 241 buckets. Last reading per bucket wins.'}
+headers: [history_model.h, history.h]
+hooks:
+  build: cyd_history::build
+  render: cyd_history::render
+  tick10: cyd_history::tick10
+  status: cyd_history::status
+  selftest: cyd_history::selftest

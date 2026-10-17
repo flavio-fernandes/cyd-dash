@@ -1,0 +1,49 @@
+# Device diagnostics: 24 px title and 20 px body, nine lines within drift-safe margins.
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          if (id(page_idx) != CYD_PAGE_device || id(sleeping) || id(saver_on) || id(calib_step) >= 0) return;
+          static std::string last;
+          char b[420];
+          bool up = cyd_net::connected();
+          std::string seen = cyd_feed::received ? cyd_slots::dur(id(message_age)) + " ago, seq " + std::to_string(cyd_feed::seq) : std::string("none yet");
+          #ifdef USE_ESP32
+          snprintf(b, sizeof b, "version build id ${marker}\ngit %s\nlast reset: %s\nIP %s\nSSID %s  %.0f dBm\nup %s  heap %uk/%uk\nMQTT %s %s\nmsg %s",
+            CYD_GIT_REV, id(reset_reason).c_str(),
+            id(device_ip).state.c_str(), id(device_ssid).state.c_str(), isnan(id(wifi_rssi).state) ? 0.0f : id(wifi_rssi).state,
+            cyd_slots::dur(millis() / 1000).c_str(), (unsigned) (cyd_device::free_heap() / 1024), (unsigned) (cyd_device::min_free_heap() / 1024),
+            up ? "ok for" : "down for", cyd_slots::dur((millis() - id(broker_since)) / 1000).c_str(), seen.c_str());
+          #else
+          snprintf(b, sizeof b, "version build id ${marker}\ngit %s\nlast reset: preview\nup %s\nheap n/a (preview)\nMQTT preview feed\nmsg %s", CYD_GIT_REV, cyd_slots::dur(cyd_device::uptime()).c_str(), seen.c_str());
+          #endif
+          if (last != b) { last = b; lv_label_set_text(id(device_text), b); }
+lvgl:
+  pages:
+    - id: device_page
+      bg_color: 0x101820
+      widgets:
+        - obj:
+            id: device_root
+            x: 0
+            y: 0
+            width: 320
+            height: 240
+            pad_all: 0
+            border_width: 0
+            bg_opa: TRANSP
+            widgets:
+              - label:
+                  x: 12
+                  y: 5
+                  text: "DEVICE"
+                  text_color: 0xFFFFFF
+                  text_font: montserrat_24
+              - label:
+                  id: device_text
+                  x: 12
+                  y: 33
+                  text: ""
+                  text_color: 0xFFFFFF
+                  text_font: montserrat_20
+                  text_line_space: 0

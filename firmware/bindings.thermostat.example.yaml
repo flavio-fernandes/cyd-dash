@@ -1,0 +1,7 @@
+thermostat:
+  temperature: {topic: home/livingroom/climate, json: temperature}
+  humidity: {topic: home/livingroom/climate, json: humidity}
+  label: {value: Living room}
+  unit: {value: '°C'}
+  setpoint: {value: 22}
+  updated_at: {topic: home/livingroom/climate, json: updated_at}

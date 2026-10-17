@@ -1,0 +1,9 @@
+[
+  {
+    "topic": "home/energy/power",
+    "payload": {
+      "watts": 5310,
+      "updated_at": "now"
+    }
+  }
+]

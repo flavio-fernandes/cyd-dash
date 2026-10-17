@@ -1,0 +1,18 @@
+name: stat
+title: Big number
+description: One big number with a label and unit, amber and red above levels you choose.
+rotate: true
+slots:
+  value: {type: number, required: true, doc: 'The number to show, for example the power your home uses right now.'}
+  label: {type: text, default: Power, doc: Heading above the number.}
+  unit: {type: text, default: W, doc: 'Unit under the number, such as W, kWh or °C.'}
+  warn: {type: number, doc: Optional level; above it the number turns amber and reads High.}
+  alert: {type: number, doc: Optional level; above it the number turns red and reads Alert.}
+  decimals: {type: number, default: 0, doc: 'Digits after the decimal point, 0 to 3.'}
+  updated_at: {type: epoch, doc: Optional measurement time in Unix seconds; can only make freshness older.}
+headers: [stat.h]
+hooks:
+  build: cyd_stat::build
+  render: cyd_stat::render
+  tick10: cyd_stat::tick10
+  status: cyd_stat::status

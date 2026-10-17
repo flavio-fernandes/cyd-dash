@@ -1,0 +1,8 @@
+# The ESPHome image plus SDL2, for the desktop preview (docs/preview.md).
+#
+#   podman build -t cyd-preview -f tools/preview/Containerfile tools/preview
+#   (docker build works the same way)
+FROM ghcr.io/esphome/esphome:stable
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libsdl2-dev pkg-config \
+ && apt-get clean

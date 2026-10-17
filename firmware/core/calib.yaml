@@ -1,0 +1,188 @@
+# Touch calibration screen (docs/cyd-ui.md §9): four corner crosshairs, one at a time, then
+# "tap anywhere to test" with a dot where the tap lands and the result. The raw readings are
+# logged and published to <prefix>/calib; the maths is in touchcal.h; the result goes to the
+# restored `touch_cal` global and status.calib / calib_flags / calib_result.
+# Started by `cmd calibrate` or a 5 s long press anywhere (core/ui.yaml).
+globals:
+  - {id: calib_step, type: int, initial_value: '-1'}  # -1 off, 0-3 corner, 4 tap test
+  - {id: calib_last, type: uint32_t, initial_value: '0'}
+  - {id: calib_raw, type: 'std::array<int, 8>', initial_value: '{0, 0, 0, 0, 0, 0, 0, 0}'}
+  # {x_min, x_max, y_min, y_max, flags} (touchcal.h); renamed from C4's `calib` so the old,
+  # unswapped calibration saved in flash is not restored.
+  - {id: touch_cal, type: 'std::array<uint16_t, 5>', restore_value: true, initial_value: '{${touch_x_min}, ${touch_x_max}, ${touch_y_min}, ${touch_y_max}, ${touch_flags}}'}
+  - {id: calib_result, type: 'std::string', initial_value: '"none"'}
+script:
+  - id: touch_apply
+    then:
+      - lambda: |-
+          #ifdef USE_ESP32
+          auto &c = id(touch_cal);
+          id(touch).set_swap_xy(c[4] & touchcal::SWAP);
+          id(touch).set_mirror_x(c[4] & touchcal::MIRROR_X);
+          id(touch).set_mirror_y(c[4] & touchcal::MIRROR_Y);
+          id(touch).set_calibration(c[0], c[1], c[2], c[3]);
+          ESP_LOGI("cyd", "CALIB in use x=%u..%u y=%u..%u flags=%u", c[0], c[1], c[2], c[3], c[4]);
+          #else
+          ESP_LOGI("cyd", "CALIB not applied: in the preview a mouse click is already a screen position");
+          #endif
+  - id: calib_show
+    then:
+      - lambda: |-
+          using touchcal::TX; using touchcal::TY;
+          int s = id(calib_step);
+          if (s < 0) return;
+          if (s < 4) {
+            lv_obj_clear_flag(id(calib_cross), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_pos(id(calib_cross), TX[s] - 20, TY[s] - 20);
+            lv_label_set_text_fmt(id(calib_text), "tap the cross %d/4", s + 1);
+            lv_obj_add_flag(id(calib_dot), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(id(calib_result_label), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(id(calib_done), LV_OBJ_FLAG_HIDDEN);
+          } else {
+            lv_obj_clear_flag(id(calib_done), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(id(calib_cross), LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(id(calib_text), "tap anywhere to test");
+            lv_label_set_text(id(calib_result_label), id(calib_result).c_str());
+            lv_obj_clear_flag(id(calib_result_label), LV_OBJ_FLAG_HIDDEN);
+          }
+  # rx/ry: the raw pair as the touchscreen reports it (after the configured swap); sx/sy: where
+  # the current calibration maps it. Fed by a tap (on_touch) or `calib_tap` (test).
+  - id: calib_touch
+    parameters:
+      rx: int
+      ry: int
+      sx: int
+      sy: int
+    then:
+      - lambda: |-
+          using touchcal::TX; using touchcal::TY;
+          uint32_t now = millis();
+          int s = id(calib_step);
+          if (s < 0) return;
+          // Same hit target for real touch and calib_tap. Consume Done before the dot path
+          // (and before debounce), so even a quick exit never adds a dot or another action.
+          if (s == 4 && sx >= 120 && sx < 200 && sy >= 192 && sy < 232) {
+            lv_obj_add_flag(id(calib_dot), LV_OBJ_FLAG_HIDDEN);
+            id(calib_step) = -1;
+            id(last_touch) = id(last_rotation) = now;
+            ESP_LOGI("cyd", "CALIB Done at=%d,%d (no test dot)", sx, sy);
+            id(apply_screen).execute();
+            return;
+          }
+          if (now - id(calib_last) < 600) return;  // one reading per tap
+          id(calib_last) = now;
+          if (s >= 4) {
+            lv_obj_set_pos(id(calib_dot), sx - 6, sy - 6);
+            lv_obj_clear_flag(id(calib_dot), LV_OBJ_FLAG_HIDDEN);
+            ESP_LOGI("cyd", "CALIB test raw=%d,%d at=%d,%d", rx, ry, sx, sy);
+            return;
+          }
+          id(calib_raw)[2 * s] = rx;
+          id(calib_raw)[2 * s + 1] = ry;
+          ESP_LOGI("cyd", "CALIB corner=%d target=%d,%d raw=%d,%d", s, TX[s], TY[s], rx, ry);
+          if (cyd_net::connected())
+            cyd_net::publish_json("${topic_prefix}/calib", [&](JsonObject j) {
+              j["corner"] = s; j["x"] = TX[s]; j["y"] = TY[s]; j["raw_x"] = rx; j["raw_y"] = ry;
+            }, 0, false);
+          if (++s == 4) {
+            touchcal::Cal out;
+            std::string why = touchcal::solve(id(calib_raw).data(), id(touch_cal)[4], out);
+            if (why.empty()) {
+              id(touch_cal) = out;
+              id(touch_apply).execute();
+              id(calib_result) = "ok";
+              ESP_LOGI("cyd", "CALIB saved x_min=%u x_max=%u y_min=%u y_max=%u flags=%u", out[0], out[1], out[2], out[3], out[4]);
+            } else {
+              id(calib_result) = why;  // the calibration in use stays
+              ESP_LOGW("cyd", "CALIB %s", why.c_str());
+            }
+            if (cyd_net::connected())
+              cyd_net::publish_json("${topic_prefix}/calib", [&](JsonObject j) {
+                j["result"] = id(calib_result);
+                auto c = j["calib"].to<JsonArray>();
+                for (int i = 0; i < 4; i++) c.add(id(touch_cal)[i]);
+                j["flags"] = id(touch_cal)[4];
+              }, 0, false);
+            id(publish_status).execute();
+          }
+          id(calib_step) = s;
+          id(calib_show).execute();
+  # Cmd-only `selftest`: each page's selftest hook, then four reference taps through the solver
+  # and ESPHome's mapping. Serial only.
+  - id: calib_selftest
+    then:
+      - lambda: |-
+          cyd_pages::selftest_all();
+          using touchcal::Cal; using touchcal::Point; using touchcal::REFERENCE_TAPS; using touchcal::TX; using touchcal::TY;
+          using touchcal::SWAP; using touchcal::solve; using touchcal::map;
+          Cal c{};
+          std::string why = solve(REFERENCE_TAPS, 0, c);
+          ESP_LOGI("cyd", "CALIB selftest solve(taps of 6729, no swap): %s x=%u..%u y=%u..%u flags=%u",
+                   why.empty() ? "ok" : why.c_str(), c[0], c[1], c[2], c[3], c[4]);
+          int sw[8];
+          for (int i = 0; i < 4; i++) { sw[2 * i] = REFERENCE_TAPS[2 * i + 1]; sw[2 * i + 1] = REFERENCE_TAPS[2 * i]; }
+          Cal c2{};
+          std::string why2 = solve(sw, SWAP, c2);
+          ESP_LOGI("cyd", "CALIB selftest solve(same taps as the swapped build reports them): %s same=%s",
+                   why2.empty() ? "ok" : why2.c_str(), c2 == c ? "yes" : "no");
+          int worst = 0;
+          for (int i = 0; i < 4; i++) {
+            Point p = map(id(touch_cal), REFERENCE_TAPS[2 * i], REFERENCE_TAPS[2 * i + 1]), q = map(c, REFERENCE_TAPS[2 * i], REFERENCE_TAPS[2 * i + 1]);
+            int e = std::max(std::max(abs(p.x - TX[i]), abs(p.y - TY[i])), std::max(abs(q.x - TX[i]), abs(q.y - TY[i])));
+            worst = std::max(worst, e);
+            ESP_LOGI("cyd", "CALIB selftest corner=%d raw=%d,%d target=%d,%d in_use=%d,%d solved=%d,%d err=%dpx",
+                     i, REFERENCE_TAPS[2 * i], REFERENCE_TAPS[2 * i + 1], TX[i], TY[i], p.x, p.y, q.x, q.y, e);
+          }
+          static const int bad[8] = {524, 544, 530, 600, 3423, 560, 3553, 540};  // all taps in one column
+          Cal c3{};
+          std::string why3 = solve(bad, 0, c3);
+          ESP_LOGI("cyd", "CALIB selftest one-column taps: %s", why3.empty() ? "ACCEPTED (wrong)" : why3.c_str());
+          ESP_LOGI("cyd", "CALIB selftest %s worst=%dpx", worst <= 10 && why.empty() && c2 == c && !why3.empty() ? "PASS" : "FAIL", worst);
+lvgl:
+  pages:
+    - id: calib_page
+      bg_color: 0x000000
+      widgets:
+        - label:
+            id: calib_text
+            align: CENTER
+            text: "tap the cross 1/4"
+            text_font: montserrat_20
+            text_color: 0xFFFFFF
+        - label:
+            id: calib_result_label
+            hidden: true
+            align: CENTER
+            y: 36
+            width: 300
+            long_mode: WRAP
+            text_align: CENTER
+            text: ""
+            text_font: montserrat_20
+            text_color: 0xFFFFFF
+        - obj:
+            id: calib_cross
+            x: 0
+            y: 0
+            width: 41
+            height: 41
+            pad_all: 0
+            radius: 0
+            border_width: 0
+            bg_opa: TRANSP
+            scrollable: false
+            widgets:
+              - obj: {x: 19, y: 0, width: 3, height: 41, pad_all: 0, radius: 0, border_width: 0, bg_color: 0xFFFFFF}
+              - obj: {x: 0, y: 19, width: 41, height: 3, pad_all: 0, radius: 0, border_width: 0, bg_color: 0xFFFFFF}
+        - obj: {id: calib_dot, hidden: true, width: 12, height: 12, radius: 6, pad_all: 0, border_width: 0, bg_color: 0x42D9E8}
+        # Touch is handled on touch-down by calib_touch, not by a second LVGL click action.
+        - button:
+            id: calib_done
+            hidden: true
+            x: 120
+            y: 192
+            width: 80
+            height: 40
+            clickable: false
+            widgets:
+              - label: {text: "Done", align: CENTER, text_font: montserrat_20, clickable: false}

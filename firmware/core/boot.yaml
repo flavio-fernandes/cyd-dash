@@ -1,0 +1,33 @@
+# Start-up, shared by the device (cyd-dash.yaml) and the desktop preview (preview.yaml). Keep
+# on_boot out of those two files: a main file's on_boot replaces this one.
+esphome:
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          ESP_LOGI("main", "CYD-DASH marker=${marker} pages=%s rotation=%d", CYD_PAGE_LIST, CYD_ROTATION_INTERVAL);
+          cyd_device::begin();
+          id(reset_reason) = cyd_device::reset_name();
+          ++id(boots);
+          ESP_LOGI("cyd", "IDENTITY git=%s reset_reason=%s boots=%u", CYD_GIT_REV, id(reset_reason).c_str(), unsigned(id(boots)));
+          // page_idx is restored from flash: a build with fewer pages must still show a page.
+          if (id(page_idx) < 0 || id(page_idx) >= CYD_PAGE_COUNT) {
+            ESP_LOGI("cyd", "PAGES page_idx %d is not in this build: showing page 0", id(page_idx));
+            id(page_idx) = 0;
+          }
+          // rotation_interval is restored too. The build's value (cyd.rotation_interval) wins
+          // once, at the first boot after it changed; an `interval N` command lasts otherwise.
+          if (id(rotation_build) != CYD_ROTATION_INTERVAL) {
+            id(rotation_build) = CYD_ROTATION_INTERVAL;
+            id(rotation_interval) = CYD_ROTATION_INTERVAL;
+          }
+          id(touch_apply).execute();
+          cyd_slots_begin();
+          cyd_perf::begin();
+          id(cyd_pages_build).execute();
+          cyd_saver::build(id(saver_root));
+          lv_obj_clear_flag(lv_obj_get_parent(id(saver_root)), LV_OBJ_FLAG_SCROLLABLE);
+          lv_obj_set_scrollbar_mode(lv_obj_get_parent(id(saver_root)), LV_SCROLLBAR_MODE_OFF);
+          cyd_pages::build_nav(id(nav_overlay), id(nav_prev), id(nav_next));
+          id(last_touch) = id(last_drift) = id(last_rotation) = millis();
+      - script.execute: apply_screen

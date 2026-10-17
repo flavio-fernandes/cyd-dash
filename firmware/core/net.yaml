@@ -1,0 +1,20 @@
+wifi:
+  ssid: ${wifi_ssid}
+  password: ${wifi_password}
+time:
+  - platform: sntp
+    id: wall_clock
+    timezone: ${timezone}
+ota:
+  - platform: esphome
+    password: !secret ota_password
+sensor:
+  - platform: wifi_signal
+    id: wifi_rssi
+    update_interval: 30s
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      id: device_ip
+    ssid:
+      id: device_ssid

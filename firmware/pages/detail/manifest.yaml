@@ -1,0 +1,10 @@
+# The page's manifest: what it is and which values it needs (tools/cyd_build.py reads it).
+name: detail
+title: Usage detail
+description: The usage page's plans in plain words, with every reset time and the login state.
+rotate: true
+requires: [usage]    # shared typed inputs; either page order works
+slots: {}            # see usage for the shared inputs
+hooks:
+  build: cyd_detail::build
+  selftest: cyd_detail::selftest

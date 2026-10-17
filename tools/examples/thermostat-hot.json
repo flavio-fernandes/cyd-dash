@@ -1,0 +1,10 @@
+[
+  {
+    "topic": "home/livingroom/climate",
+    "payload": {
+      "temperature": 32,
+      "humidity": 70,
+      "updated_at": "now"
+    }
+  }
+]

@@ -1,0 +1,10 @@
+# The big-number page, showing the power a home uses right now.
+# For a topic that carries only the number, leave out json: {topic: home/energy/power}.
+stat:
+  value: {topic: home/energy/power, json: watts}
+  updated_at: {topic: home/energy/power, json: updated_at}
+  label: {value: House power}
+  unit: {value: W}
+  warn: {value: 3000}
+  alert: {value: 5000}
+  decimals: {value: 0}

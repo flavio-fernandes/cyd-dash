@@ -1,0 +1,7 @@
+# The page's manifest: what it is and which values it needs (tools/cyd_build.py reads it).
+name: device
+title: Device
+description: Diagnostics for the device itself, such as its version, network, memory and broker connection.
+rotate: true
+slots: {}            # it needs no input: everything it shows comes from the device
+hooks: {}            # its 1 s refresh lives in page.yaml

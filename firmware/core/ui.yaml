@@ -1,0 +1,369 @@
+# Navigation, rotation, sleep, screensaver and pixel drift (docs/cyd-ui.md §5-6).
+# Every action, touch or cmd topic, goes through apply_cmd; apply_screen then makes the
+# screen (page, saver, calibration, backlight, LVGL pause, overlay) match the globals.
+globals:
+  - {id: page_idx, type: int, restore_value: true, initial_value: '0'}
+  - {id: auto_mode, type: bool, restore_value: true, initial_value: 'true'}
+  - {id: rotation_interval, type: int, restore_value: true, initial_value: '20'}
+  - {id: drift_enabled, type: bool, restore_value: true, initial_value: 'true'}
+  - {id: saver_after, type: int, restore_value: true, initial_value: '3600'}
+  - {id: brightness, type: int, restore_value: true, initial_value: '100'}
+  # Long press (C4b): millis() of the touch-down (0 = not pressed), the simulated release of
+  # `press_sim`, and the hint shown (0 none, 1 "hold", 2 "release to calibrate").
+  - {id: press_at, type: uint32_t, initial_value: '0'}
+  - {id: press_sim_until, type: uint32_t, initial_value: '0'}
+  - {id: press_stage, type: int, initial_value: '0'}
+  # How long the last touch was held, for press_settle once the bounce window is over (C7c).
+  - {id: press_held, type: uint32_t, initial_value: '0'}
+  # The build's rotation interval at the last boot: when cyd.rotation_interval in site.yaml
+  # changes, the new value replaces rotation_interval once; an `interval N` command lasts
+  # until the next build that changes it (cyd-dash.yaml, on_boot).
+  - {id: rotation_build, type: int, restore_value: true, initial_value: '0'}
+  - {id: overlay_visible, type: bool, initial_value: 'false'}
+  # millis() when the bar last appeared: its buttons arm only once it has shown for a while (C7c).
+  - {id: overlay_since, type: uint32_t, initial_value: '0'}
+  # Set by nav_touch just before apply_cmd, so a nav action knows it came from a button.
+  - {id: nav_from_touch, type: bool, initial_value: 'false'}
+  - {id: sleeping, type: bool, initial_value: 'false'}
+  - {id: saver_on, type: bool, initial_value: 'false'}
+  - {id: lv_paused, type: bool, initial_value: 'false'}
+  - {id: screen_want, type: int, initial_value: '0'}
+  - {id: screen_shown, type: int, initial_value: '-1'}
+  - {id: last_rotation, type: uint32_t, initial_value: '0'}
+  - {id: last_touch, type: uint32_t, initial_value: '0'}
+  - {id: last_drift, type: uint32_t, initial_value: '0'}
+  - {id: drift_period, type: int, initial_value: '300'}
+  - {id: drift_step, type: int, initial_value: '0'}
+  # current offset; LVGL only lays out the page on screen, so read it here, not from a widget
+  - {id: drift_x, type: int, initial_value: '0'}
+  - {id: drift_y, type: int, initial_value: '0'}
+script:
+  # A touch (core/hardware.yaml on the device, a mouse click in the preview). A tap in
+  # calibration feeds it; a tap on the dark or saver screen only wakes it (consumed); otherwise
+  # it reveals the overlay, and only arms its buttons if the overlay had been showing for 300 ms
+  # (the first tap never acts, docs/cyd-ui.md §5). A touch-down within 150 ms of a release is the
+  # XPT2046 bouncing: it continues that touch and starts nothing (core/tap.h, C7c).
+  - id: touch_down
+    parameters:
+      x_raw: int
+      y_raw: int
+      x: int
+      y: int
+    then:
+      - lambda: |-
+          uint32_t now = millis();
+          auto &tap = cyd_tap::state;
+          id(last_touch) = now;
+          if (tap.settled(now)) id(press_settle).execute();  // the touch before ended
+          bool bounce = tap.touch(now, id(overlay_visible), id(overlay_since));
+          ESP_LOGD("cyd", "TOUCH down %s gap=%ums", bounce ? "bounce" : "new", (unsigned) (now - tap.released));
+          // Long press: timed by the 100 ms clock below, acted on once the release settles
+          // (press_settle). It needs no position, so it works with any touch mapping, on any screen.
+          // A bounce keeps the hold running from the touch's first touch-down.
+          id(press_at) = id(calib_step) >= 0 ? 0 : std::max<uint32_t>(1, bounce ? tap.start : now);
+          id(press_sim_until) = 0;
+          if (bounce) return;
+          if (id(calib_step) >= 0) { tap.armed = false; id(calib_touch).execute(x_raw, y_raw, x, y); return; }
+          if (id(sleeping) || id(saver_on)) { tap.armed = false; id(apply_cmd).execute(std::string("wake")); return; }
+          id(reveal_overlay).execute();
+  # A nav button's click (LVGL, at release): acts only when the touch armed the bar, once per
+  # touch, and not within 400 ms of the last nav click (core/tap.h).
+  - id: nav_touch
+    parameters:
+      x: string
+    then:
+      - lambda: |-
+          if (!cyd_tap::state.click(millis())) { ESP_LOGI("cyd", "NAV %s ignored", x.c_str()); return; }
+          id(nav_from_touch) = true;
+          id(apply_cmd).execute(x);
+  - id: apply_cmd
+    mode: queued
+    parameters:
+      x: string
+    then:
+      - lambda: |-
+          bool valid = true;
+          int n = 0, m = 0;
+          uint32_t now = millis();
+          bool from_touch = id(nav_from_touch);
+          id(nav_from_touch) = false;
+          auto pin = [&](int p) { id(page_idx) = p; id(auto_mode) = false; id(last_rotation) = now; };
+          if (x == "next") pin(cyd_pages::next(id(page_idx)));
+          else if (x == "prev") pin(cyd_pages::prev(id(page_idx)));
+          else if (x.rfind("page ", 0) == 0 && cyd_pages::lookup(x.substr(5)) >= 0) pin(cyd_pages::lookup(x.substr(5)));
+          else if (x == "auto on") { id(auto_mode) = true; id(last_rotation) = now; }
+          else if (x == "auto off") id(auto_mode) = false;
+          else if (x == "drift on") { id(drift_enabled) = true; id(last_drift) = now; }
+          else if (x == "drift off") {
+            id(drift_enabled) = false;
+            id(drift_step) = 0;
+            id(drift_x) = id(drift_y) = 0;
+            cyd_pages::set_drift(0, 0);
+          }
+          else if (x == "overlay") {}
+          else if (x == "sleep") id(sleeping) = true;
+          else if (x == "wake") {
+            if (id(calib_step) >= 0 && id(calib_step) < 4) id(calib_result) = "aborted (wake)";
+            id(sleeping) = false; id(saver_on) = false; id(calib_step) = -1;
+          }
+          else if (x == "saver") id(saver_on) = true;
+          else if (x == "calibrate") { id(calib_step) = 0; id(calib_last) = now; id(sleeping) = false; id(calib_result) = "pending"; }
+          else if (x == "selftest") id(calib_selftest).execute();
+          // Test only (C4b): a touch-down released after n ms, as a finger would (long press).
+          else if (sscanf(x.c_str(), "press_sim %d", &n) == 1 && n >= 100 && n <= 20000) {
+            id(press_at) = now; id(press_sim_until) = now + n; id(sleeping) = false;
+          }
+          // Test only (C4b): where a raw XPT2046 pair (its own axes) lands with the calibration
+          // in use, through the same mapping as ESPHome; logged and published to <prefix>/calib.
+          else if (sscanf(x.c_str(), "calib_sim %d %d", &n, &m) == 2) {
+            auto p = touchcal::map(id(touch_cal), n, m);
+            ESP_LOGI("cyd", "CALIB sim raw=%d,%d -> reported=%d,%d screen=%d,%d", n, m, p.rx, p.ry, p.x, p.y);
+            if (cyd_net::connected())
+              cyd_net::publish_json("${topic_prefix}/calib", [&](JsonObject j) {
+                j["sim"] = true; j["raw_x"] = n; j["raw_y"] = m; j["x"] = p.x; j["y"] = p.y;
+              }, 0, false);
+          }
+          // Test only (C4b): a calibration tap with that raw pair, as on_touch would feed it.
+          else if (sscanf(x.c_str(), "calib_tap %d %d", &n, &m) == 2 && id(calib_step) >= 0) {
+            auto p = touchcal::map(id(touch_cal), n, m);
+            id(calib_touch).execute(p.rx, p.ry, p.x, p.y);
+          }
+          else if (sscanf(x.c_str(), "interval %d", &n) == 1 && n >= 5 && n <= 600) id(rotation_interval) = n;
+          else if (sscanf(x.c_str(), "saver_after %d", &n) == 1 && n >= 30 && n <= 86400) id(saver_after) = n;
+          else if (sscanf(x.c_str(), "brightness %d", &n) == 1 && n >= 10 && n <= 100) id(brightness) = n;
+          else if (sscanf(x.c_str(), "drift_period %d", &n) == 1 && n >= 10 && n <= 300) { id(drift_period) = n; id(last_drift) = now; }
+          else valid = false;
+          if (!valid) { ESP_LOGW("cyd", "Unsupported/invalid command: %s", x.c_str()); return; }
+          ESP_LOGI("cyd", "CMD %s", x.c_str());
+          auto nav = cyd_tap::nav_name(x);
+          if (!nav.empty()) {
+            cyd_tap::state.nav(nav, from_touch, now);
+            ESP_LOGI("cyd", "NAV %s (%s)", nav.c_str(), from_touch ? "touch" : "cmd");
+          }
+          // Any action counts as a touch for the saver's idle timer, and leaves the saver.
+          if (x != "saver") { id(last_touch) = now; if (x != "sleep") id(saver_on) = false; }
+          id(apply_screen).execute();
+          if (x == "overlay") id(reveal_overlay).execute();
+  - id: apply_screen
+    mode: queued
+    then:
+      - lambda: |-
+          int want = id(calib_step) >= 0 ? cyd_pages::SCREEN_CALIB : (id(saver_on) ? cyd_pages::SCREEN_SAVER : id(page_idx));
+          id(screen_want) = want;
+          if (want >= CYD_PAGE_COUNT || id(sleeping)) {
+            id(overlay_visible) = false;
+            lv_obj_add_flag(id(nav_overlay), LV_OBJ_FLAG_HIDDEN);
+          }
+          lv_obj_set_style_bg_color(id(nav_pin_dot), lv_color_hex(id(auto_mode) ? 0x000000 : 0xFFFFFF), LV_PART_MAIN);
+          cyd_pages::update_dots(id(page_idx));
+          if (!id(sleeping) && id(lv_paused)) { id(lv_paused) = false; id(lvgl_ui).set_paused(false, false); }
+      # The pages' show chain is generated (generated/build.yaml) from the page list.
+      - script.execute: cyd_show_page
+      - if:
+          condition:
+            lambda: return id(screen_want) == cyd_pages::SCREEN_SAVER && id(screen_shown) != cyd_pages::SCREEN_SAVER;
+          then:
+            - lvgl.page.show: saver_page
+      - if:
+          condition:
+            lambda: return id(screen_want) == cyd_pages::SCREEN_CALIB && id(screen_shown) != cyd_pages::SCREEN_CALIB;
+          then:
+            - lvgl.page.show: calib_page
+      - lambda: |-
+          if (id(screen_want) != id(screen_shown))
+            ESP_LOGI("cyd", "SCREEN %d -> %d", id(screen_shown), id(screen_want));
+          id(screen_shown) = id(screen_want);
+          if (id(sleeping)) {
+            id(display_backlight).turn_off().perform();
+            if (!id(lv_paused)) { id(lv_paused) = true; id(lvgl_ui).set_paused(true, false); }
+          } else {
+            float b = id(screen_want) == cyd_pages::SCREEN_SAVER ? 0.30f : id(brightness) / 100.0f;  // saver: ~30 % (§6)
+            id(display_backlight).turn_on().set_brightness(b).perform();
+          }
+          if (id(screen_want) == cyd_pages::SCREEN_CALIB) id(calib_show).execute();
+          if (id(screen_want) == cyd_pages::SCREEN_SAVER) id(saver_render).execute();
+      - script.execute: publish_status
+  # Touch released (or press_sim's release). It may be a bounce: press_settle acts once no touch
+  # came back within 150 ms.
+  - id: press_end
+    then:
+      - lambda: |-
+          id(press_held) = id(press_at) ? millis() - id(press_at) : 0;
+          id(press_at) = 0;
+          id(press_sim_until) = 0;
+          cyd_tap::state.release(millis());
+  # The touch has ended: after 5 s held, start calibrate.
+  - id: press_settle
+    then:
+      - lambda: |-
+          uint32_t held = id(press_held);
+          id(press_held) = 0;
+          if (id(press_stage)) { id(press_stage) = 0; lv_obj_add_flag(id(press_hint), LV_OBJ_FLAG_HIDDEN); }
+          if (held >= 5000 && id(calib_step) < 0) {
+            ESP_LOGI("cyd", "LONGPRESS released after %ums: calibrate", (unsigned) held);
+            id(apply_cmd).execute(std::string("calibrate"));
+          }
+  - id: reveal_overlay
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: return !id(sleeping) && !id(saver_on) && id(calib_step) < 0;
+          then:
+            - lambda: |-
+                if (!id(overlay_visible)) id(overlay_since) = millis();
+                id(overlay_visible) = true;
+                lv_obj_clear_flag(id(nav_overlay), LV_OBJ_FLAG_HIDDEN);
+            - script.execute: publish_status
+            - delay: 6s
+            - lambda: |-
+                id(overlay_visible) = false;
+                lv_obj_add_flag(id(nav_overlay), LV_OBJ_FLAG_HIDDEN);
+            - script.execute: publish_status
+interval:
+  # The one animation clock (C3 review): every page's tick10 hook and the saver step here,
+  # each only while it is on screen; pages with a changed slot render from here too.
+  - interval: 100ms
+    then:
+      - lambda: |-
+          bool lit = !id(sleeping) && id(calib_step) < 0;
+          auto t = id(wall_clock).now();
+          cyd_page::Ctx ctx{t.is_valid() ? int64_t(t.timestamp) : -1, false, cyd_net::connected()};
+          cyd_pages::tick10(lit && !id(saver_on) ? id(page_idx) : -1, ctx);
+          cyd_saver::tick(lit && id(saver_on));
+          if (cyd_tap::state.settled(millis())) id(press_settle).execute();
+          // Long press (C4b): a hint from 3 s; release after 5 s starts calibrate (press_end).
+          if (id(press_at)) {
+            uint32_t now = millis(), held = now - id(press_at);
+            if (id(press_sim_until) && int32_t(now - id(press_sim_until)) >= 0) { id(press_end).execute(); return; }
+            int stage = held >= 5000 ? 2 : (held >= 3000 ? 1 : 0);
+            if (stage > id(press_stage)) {
+              id(press_stage) = stage;
+              cyd_tap::state.long_press();  // a long press never presses a nav button on release
+              lv_label_set_text(id(press_hint), stage == 2 ? "release to calibrate" : "hold 5 s to calibrate");
+              lv_obj_clear_flag(id(press_hint), LV_OBJ_FLAG_HIDDEN);
+              ESP_LOGI("cyd", "LONGPRESS held %ums: hint %d", (unsigned) held, stage);
+            }
+          }
+  # Rotation, saver timeout, pixel drift and the calibration timeout.
+  - interval: 1s
+    then:
+      - lambda: |-
+          uint32_t now = millis();
+          if (id(calib_step) >= 0) {
+            // A corner waits 5 min for its tap (time to reach the display); the test screen
+            // stays 60 s after the last tap.
+            if (now - id(calib_last) > (id(calib_step) == 4 ? 60000u : 300000u)) {
+              ESP_LOGI("cyd", "CALIB closed at step %d", id(calib_step));
+              if (id(calib_step) < 4) id(calib_result) = "timeout at corner " + std::to_string(id(calib_step) + 1);
+              id(calib_step) = -1;
+              id(apply_screen).execute();
+            }
+            return;
+          }
+          if (id(sleeping)) return;
+          if (id(drift_enabled) && now - id(last_drift) >= uint32_t(id(drift_period)) * 1000) {
+            id(last_drift) = now;
+            static const int dx[] = {3, 3, -3, -3, 0};
+            static const int dy[] = {3, -3, -3, 3, 0};
+            int i = id(drift_step)++ % 5;
+            id(drift_x) = dx[i];
+            id(drift_y) = dy[i];
+            cyd_pages::set_drift(dx[i], dy[i]);
+            ESP_LOGI("cyd", "DRIFT x=%d y=%d", dx[i], dy[i]);
+            id(publish_status).execute();
+          }
+          if (id(saver_on)) return;
+          if (id(auto_mode)) {
+            if (now - id(last_rotation) < uint32_t(id(rotation_interval)) * 1000) return;
+            id(last_rotation) = now;
+            int p = cyd_pages::next_rotating(id(page_idx));
+            if (p == id(page_idx)) return;
+            id(page_idx) = p;
+            id(apply_screen).execute();
+          } else if (now - id(last_touch) >= uint32_t(id(saver_after)) * 1000) {
+            ESP_LOGI("cyd", "SAVER start after %ds idle", id(saver_after));
+            id(saver_on) = true;
+            id(apply_screen).execute();
+          }
+lvgl:
+  id: lvgl_ui
+  displays: [cyd_display]
+  touchscreens: [touch]
+  buffer_size: 25%
+  top_layer:
+    widgets:
+      # Long-press hint (C4b), above every page, the saver and the calibration screen.
+      - label:
+          id: press_hint
+          hidden: true
+          align: TOP_MID
+          y: 8
+          text: "hold 5 s to calibrate"
+          text_font: montserrat_20
+          text_color: 0xFFFFFF
+          bg_color: 0x303844
+          bg_opa: COVER
+          pad_all: 6
+          radius: 4
+      # Bottom nav bar (§5): every button at least 44x40 px. The first tap only reveals it
+      # (that touch does not arm it, core/tap.h), so a stray press never acts.
+      # The page dots are drawn in C++ from the page count (cyd_pages::build_nav); a one-page
+      # build hides them and the arrows.
+      - obj:
+          id: nav_overlay
+          hidden: true
+          width: 320
+          height: 44
+          align: BOTTOM_MID
+          pad_all: 0
+          radius: 0
+          bg_color: 0x303844
+          border_width: 0
+          scrollable: false
+          widgets:
+            - button:
+                id: nav_prev
+                x: 2
+                y: 2
+                width: 52
+                height: 40
+                widgets:
+                  - label: {text: "", align: CENTER, text_font: montserrat_20}
+                on_click:
+                  - lambda: |-
+                      id(nav_touch).execute(std::string("prev"));
+            - button:
+                id: nav_next
+                x: 108
+                y: 2
+                width: 52
+                height: 40
+                widgets:
+                  - label: {text: "", align: CENTER, text_font: montserrat_20}
+                on_click:
+                  - lambda: |-
+                      id(nav_touch).execute(std::string("next"));
+            - button:
+                x: 166
+                y: 2
+                width: 72
+                height: 40
+                widgets:
+                  - label: {id: nav_mode_label, text: "Pin", align: CENTER, text_font: montserrat_20}
+                on_click:
+                  - lambda: |-
+                      id(nav_touch).execute(std::string(id(auto_mode) ? "auto off" : "auto on"));
+            - button:
+                x: 244
+                y: 2
+                width: 74
+                height: 40
+                widgets:
+                  - label: {text: "Sleep", align: CENTER, text_font: montserrat_20}
+                on_click:
+                  - lambda: |-
+                      id(nav_touch).execute(std::string("sleep"));
+            # 10 px, inside the Pin button's top-right corner (button x 166..238, y 2..42), clear
+            # of the centred label; drawn after the button so it sits on top (owner, 2026-10-08).
+            - obj: {id: nav_pin_dot, x: 224, y: 6, width: 10, height: 10, radius: 5, pad_all: 0, border_width: 1, border_color: 0x788695, bg_color: 0x000000, bg_opa: COVER, clickable: false, scrollable: false}

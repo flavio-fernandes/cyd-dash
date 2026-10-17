@@ -1,0 +1,28 @@
+# Detail shares usage inputs, but owns its font holders.
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          if (id(page_idx) != CYD_PAGE_detail || id(sleeping) || id(saver_on) || id(calib_step) >= 0) return;
+          auto t = id(wall_clock).now();
+          int64_t now = t.is_valid() ? int64_t(t.timestamp) : -1;
+          cyd_usage_data::refresh(now);
+          cyd_detail::render(now, cyd_usage_data::state(), cyd_usage_data::age());
+lvgl:
+  pages:
+    - id: detail_page
+      bg_color: 0x101820
+      widgets:
+        - obj:
+            id: detail_root
+            width: 320
+            height: 240
+            x: 0
+            y: 0
+            pad_all: 0
+            bg_opa: TRANSP
+            border_width: 0
+            widgets:
+              - label: {hidden: true, text: "", text_font: montserrat_16}
+              - label: {hidden: true, text: "", text_font: montserrat_20}
+              - label: {hidden: true, text: "", text_font: c7_condensed20}

@@ -1,0 +1,23 @@
+# The desktop preview: the same core, registry and pages as cyd-dash.yaml, in a 320x240 window
+# on your computer (ESPHome's host platform with an SDL display). Mouse clicks act as touches.
+# Start it with tools/cyd_preview.py, which prepares generated/ first; docs/preview.md explains
+# the rest, screenshots included.
+substitutions:
+  marker: "preview"
+  touch_x_min: "342"
+  touch_x_max: "3547"
+  touch_y_min: "223"
+  touch_y_max: "3785"
+  touch_flags: "1"
+packages:
+  # Your site.yaml's substitutions, without the network and secret ones.
+  site: !include generated/site_preview.yaml
+  preview: !include core/preview.yaml
+  boot: !include core/boot.yaml
+  ui: !include core/ui.yaml
+  status: !include core/status.yaml
+  saver: !include core/saver.yaml
+  calib: !include core/calib.yaml
+  pages: !include generated/build.yaml
+esphome:
+  name: cyd-preview

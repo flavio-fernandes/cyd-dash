@@ -1,0 +1,44 @@
+# The firmware's entry point. Before ESPHome reads it, run
+#   python3 tools/cyd_build.py prepare
+# which reads site.yaml (the device, its network and cyd: the pages) and bindings.yaml (where
+# each page gets its values), then writes generated/: the site package, the chosen pages, the
+# MQTT subscriptions and the page registry. `cyd_build.py compile` and `run` do the same first.
+# preview.yaml is the same firmware in a window on your computer (docs/preview.md).
+substitutions:
+  marker: "7352"
+  # Touch calibration (touchcal.h): the XPT2046's axes are swapped against the panel, so
+  # touch_flags = 1 (swap) and x_min..x_max is the raw range along screen x. Extrapolated to the
+  # screen edges from the owner's four taps on build 6729 (C4b report).
+  touch_x_min: "342"
+  touch_x_max: "3547"
+  touch_y_min: "223"
+  touch_y_max: "3785"
+  touch_flags: "1"
+packages:
+  # Defaults first: every later package, site.yaml above all, can override them.
+  defaults: !include core/defaults.yaml
+  site: !include generated/site.yaml
+  hardware: !include core/hardware.yaml
+  net: !include core/net.yaml
+  mqtt: !include core/mqtt.yaml
+  # Start-up, shared with preview.yaml (keep on_boot out of this file).
+  boot: !include core/boot.yaml
+  ui: !include core/ui.yaml
+  status: !include core/status.yaml
+  saver: !include core/saver.yaml
+  calib: !include core/calib.yaml
+  # The chosen pages, the header list (esphome: includes:) and the page glue.
+  pages: !include generated/build.yaml
+  # One MQTT subscription per topic a page reads.
+  topics: !include generated/mqtt.yaml
+esphome:
+  name: ${device_name}
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+logger:
+safe_mode:
+  boot_is_good_after: 15s
+preferences:
+  flash_write_interval: 0s

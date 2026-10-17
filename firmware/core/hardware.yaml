@@ -1,0 +1,60 @@
+spi:
+  - id: display_spi
+    clk_pin: GPIO14
+    mosi_pin: GPIO13
+    miso_pin: GPIO12
+  - id: touch_spi
+    clk_pin: GPIO25
+    mosi_pin: GPIO32
+    miso_pin: GPIO39
+output:
+  - platform: ledc
+    pin: GPIO21
+    id: backlight_pwm
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    id: display_backlight
+    name: Display Backlight
+    restore_mode: ALWAYS_ON
+    default_transition_length: 0s
+display:
+  - platform: ili9xxx
+    id: cyd_display
+    model: ILI9341
+    spi_id: display_spi
+    cs_pin: GPIO15
+    dc_pin: GPIO2
+    invert_colors: false
+    # rgb: with bgr (C4) the amber and red fills still showed blue/violet in the owner's phone photo of
+    # the `near` fixture (2026-10-07). The camera cannot judge hue; the owner checks it.
+    color_order: rgb
+    dimensions: {width: 320, height: 240}
+    transform: {mirror_x: false, mirror_y: true}
+    auto_clear_enabled: false
+    update_interval: never
+touchscreen:
+  - platform: xpt2046
+    id: touch
+    spi_id: touch_spi
+    cs_pin: GPIO33
+    interrupt_pin: GPIO36
+    # Screen x follows the XPT2046's raw y (the owner's taps, C4b). ESPHome swaps first and then
+    # applies `calibration` to the swapped axes. on_boot replaces all of this with touch_cal
+    # (core/calib.yaml), which a calibrate run may change.
+    transform: {swap_xy: true, mirror_x: false, mirror_y: false}
+    calibration:
+      x_min: ${touch_x_min}
+      x_max: ${touch_x_max}
+      y_min: ${touch_y_min}
+      y_max: ${touch_y_max}
+    on_touch:
+      # What a touch does lives in core/ui.yaml (touch_down), shared with the desktop preview.
+      - script.execute:
+          id: touch_down
+          x_raw: !lambda return touch.x_raw;
+          y_raw: !lambda return touch.y_raw;
+          x: !lambda return touch.x;
+          y: !lambda return touch.y;
+    on_release:
+      - script.execute: press_end

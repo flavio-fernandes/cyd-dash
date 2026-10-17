@@ -1,0 +1,87 @@
+# The desktop preview's stand-ins for the CYD's hardware and network: preview.yaml uses this
+# file instead of core/hardware.yaml, core/net.yaml and core/mqtt.yaml. The window is the
+# screen and mouse clicks are touches. core/preview.h feeds messages and takes screenshots
+# (docs/preview.md).
+host:
+json:
+esphome:
+  includes:
+    - core/preview.h
+logger:
+time:
+  - platform: host
+    id: wall_clock
+    timezone: ${timezone}
+display:
+  - platform: sdl
+    id: cyd_display
+    dimensions: {width: 320, height: 240}
+    auto_clear_enabled: false
+    update_interval: never
+touchscreen:
+  - platform: sdl
+    id: touch
+    on_touch:
+      - script.execute:
+          id: touch_down
+          x_raw: !lambda return touch.x_raw;
+          y_raw: !lambda return touch.y_raw;
+          x: !lambda return touch.x;
+          y: !lambda return touch.y;
+    on_release:
+      - script.execute: press_end
+# The backlight: brightness and sleep still run through it, with nothing to drive.
+output:
+  - platform: template
+    id: backlight_pwm
+    type: float
+    write_action:
+      - lambda: |-
+          // no backlight in a window
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    id: display_backlight
+    name: Display Backlight
+    restore_mode: ALWAYS_ON
+    default_transition_length: 0s
+# What the device page shows for the network.
+sensor:
+  - platform: template
+    id: wifi_rssi
+    update_interval: never
+text_sensor:
+  - platform: template
+    id: device_ip
+    lambda: return {"preview"};
+    update_interval: 1s
+  - platform: template
+    id: device_ssid
+    lambda: return {"none"};
+    update_interval: 1s
+interval:
+  - interval: 100ms
+    then:
+      - lambda: |-
+          // Once, a second after boot: the feed (CYD_FEED), then the commands (CYD_PAGE,
+          // CYD_CMDS). With CYD_SHOT: wait CYD_SHOT_DELAY ms, save CYD_FRAMES screenshots
+          // 100 ms apart, then exit.
+          const auto &o = cyd_preview::options();
+          static int stage = 0, frame = 0;
+          static uint32_t since = 0;
+          if (stage == 0) {
+            if (millis() < 1000) return;
+            for (auto &m : cyd_preview::read_feed(o.feed)) id(cyd_deliver_named).execute(m.first, m.second);
+            for (auto &c : o.commands) id(apply_cmd).execute(c);
+            stage = 1;
+            since = millis();
+            return;
+          }
+          if (o.shot.empty() || millis() - since < uint32_t(o.delay_ms)) return;
+          std::string path = cyd_preview::frame_path(o.shot, frame, o.frames);
+          if (!cyd_preview::save_png(path)) std::exit(3);
+          ESP_LOGI("preview", "SHOT %s", path.c_str());
+          if (++frame >= o.frames) {
+            ESP_LOGI("preview", "SHOT done: %d frame(s)", o.frames);
+            std::exit(0);
+          }

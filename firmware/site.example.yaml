@@ -1,0 +1,20 @@
+# Your device and your network. Copy this file to site.yaml (it stays on your computer: git
+# ignores it) and change the values. Keep the copy private: it holds your Wi-Fi password.
+substitutions:
+  device_name: cyd-dash               # ESPHome node name (also the mDNS name)
+  wifi_ssid: "your-ssid"              # a network from which the broker is reachable
+  wifi_password: ""                   # empty string for an open network
+  mqtt_broker: mqtt.example.com       # DNS name preferred over an IP
+  mqtt_port: "1883"
+  usage_topic: cyd/usage              # the topic your usage payload is published to
+  topic_prefix: cyd/dash              # device status + cmd topics live under this
+  timezone: Etc/UTC          # POSIX/IANA zone for the clock shown on screen
+
+# Which pages to show. tools/cyd_build.py reads this part; ESPHome never sees it.
+cyd:
+  # Any of the folders in firmware/pages/, in the order you want them. One page is fine
+  # (the arrows and dots then hide).
+  pages: [usage, detail, device]
+  # Seconds between pages in Auto mode (5 to 600). The `interval N` command changes it on the
+  # device until the next build that changes this number.
+  rotation_interval: 20

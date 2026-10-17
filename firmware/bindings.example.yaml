@@ -1,0 +1,45 @@
+# Copy to bindings.yaml and choose your topics and JSON paths.
+# For one gauge, remove every gauge2_ binding. Detail reuses these slots.
+usage:
+  gauge1_label: {topic: '${usage_topic}', json: 'gauges[0].label'}
+  gauge1_used_pct: {topic: '${usage_topic}', json: 'gauges[0].used_pct'}
+  gauge1_resets_at: {topic: '${usage_topic}', json: 'gauges[0].resets_at'}
+  gauge1_weekly_pct: {topic: '${usage_topic}', json: 'gauges[0].weekly_pct'}
+  gauge1_weekly_resets_at: {topic: '${usage_topic}', json: 'gauges[0].weekly_resets_at'}
+  gauge1_cap_pct: {topic: '${usage_topic}', json: 'gauges[0].cap_pct'}
+  gauge1_base_cap_pct: {topic: '${usage_topic}', json: 'gauges[0].base_cap_pct'}
+  gauge1_donated_pct: {topic: '${usage_topic}', json: 'gauges[0].donated_pct'}
+  gauge1_snoozed: {topic: '${usage_topic}', json: 'gauges[0].snoozed'}
+  gauge1_auth: {topic: '${usage_topic}', json: 'gauges[0].auth'}
+  gauge1_inferred: {topic: '${usage_topic}', json: 'gauges[0].inferred'}
+  # Plan A: enable the optional inputs your feed provides.
+  # gauge1_limit_reached: {topic: '${usage_topic}', json: 'gauges[0].limit_reached'}
+  # gauge1_measured_at: {topic: '${usage_topic}', json: 'gauges[0].measured_at'}
+  # gauge1_old_after: {topic: '${usage_topic}', json: 'gauges[0].old_after'}
+  # gauge1_weekly_cap_pct: {topic: '${usage_topic}', json: 'gauges[0].weekly_cap_pct'}
+  # gauge1_weekly_base_cap_pct: {topic: '${usage_topic}', json: 'gauges[0].weekly_base_cap_pct'}
+  # gauge1_weekly_donated_pct: {topic: '${usage_topic}', json: 'gauges[0].weekly_donated_pct'}
+  # gauge1_donated_until: {topic: '${usage_topic}', json: 'gauges[0].donated_until'}
+  gauge1_updated_at: {topic: '${usage_topic}', json: 'gauges[0].updated_at'}
+  gauge2_label: {topic: '${usage_topic}', json: 'gauges[1].label'}
+  gauge2_used_pct: {topic: '${usage_topic}', json: 'gauges[1].used_pct'}
+  gauge2_resets_at: {topic: '${usage_topic}', json: 'gauges[1].resets_at'}
+  gauge2_weekly_pct: {topic: '${usage_topic}', json: 'gauges[1].weekly_pct'}
+  gauge2_weekly_resets_at: {topic: '${usage_topic}', json: 'gauges[1].weekly_resets_at'}
+  gauge2_cap_pct: {topic: '${usage_topic}', json: 'gauges[1].cap_pct'}
+  gauge2_base_cap_pct: {topic: '${usage_topic}', json: 'gauges[1].base_cap_pct'}
+  gauge2_donated_pct: {topic: '${usage_topic}', json: 'gauges[1].donated_pct'}
+  gauge2_snoozed: {topic: '${usage_topic}', json: 'gauges[1].snoozed'}
+  gauge2_auth: {topic: '${usage_topic}', json: 'gauges[1].auth'}
+  gauge2_inferred: {topic: '${usage_topic}', json: 'gauges[1].inferred'}
+  # Plan B: enable the optional inputs your feed provides.
+  # gauge2_limit_reached: {topic: '${usage_topic}', json: 'gauges[1].limit_reached'}
+  # gauge2_measured_at: {topic: '${usage_topic}', json: 'gauges[1].measured_at'}
+  # gauge2_old_after: {topic: '${usage_topic}', json: 'gauges[1].old_after'}
+  # gauge2_weekly_cap_pct: {topic: '${usage_topic}', json: 'gauges[1].weekly_cap_pct'}
+  # gauge2_weekly_base_cap_pct: {topic: '${usage_topic}', json: 'gauges[1].weekly_base_cap_pct'}
+  # gauge2_weekly_donated_pct: {topic: '${usage_topic}', json: 'gauges[1].weekly_donated_pct'}
+  # gauge2_donated_until: {topic: '${usage_topic}', json: 'gauges[1].donated_until'}
+  gauge2_updated_at: {topic: '${usage_topic}', json: 'gauges[1].updated_at'}
+detail: {}
+device: {}

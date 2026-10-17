@@ -1,0 +1,56 @@
+# Usage page (docs/cyd-ui.md §3-4). Its widgets live in usage.h (cyd_usage::build_page, the
+# build hook in manifest.yaml: a package's own on_boot list is replaced by the main file's).
+# Freshness comes from the required slots, with an optional measurement timestamp.
+font:
+  # Narrow letterforms keep 20 px text inside each half of the display (also used by detail).
+  - file: "gfonts://Barlow Condensed"
+    id: c7_condensed20
+    size: 20
+script:
+  - id: usage_render
+    then:
+      - lambda: |-
+          auto t = id(wall_clock).now();
+          int64_t now = t.is_valid() ? int64_t(t.timestamp) : -1;
+          cyd_usage_data::refresh(now);
+          if (id(page_idx) == CYD_PAGE_usage && !id(sleeping) && !id(saver_on))
+            cyd_usage::render(now, cyd_usage_data::state(), cyd_usage_data::age(), cyd_net::connected());
+interval:
+  - interval: 1s
+    then:
+      - script.execute: usage_render
+  # The 100 ms animation clock lives in core/ui.yaml (one clock for the glow and the saver).
+lvgl:
+  pages:
+    - id: usage_page
+      bg_color: 0x101820
+      widgets:
+        - obj:
+            id: usage_root
+            x: 0
+            y: 0
+            width: 320
+            height: 240
+            pad_all: 0
+            border_width: 0
+            bg_opa: TRANSP
+            widgets:
+              # Font holders: they compile the sizes in and hand their fonts to usage.h
+              # (build_page reads them by position: keep this order).
+              - label: {hidden: true, id: usage_f16, text: "", text_font: montserrat_16}
+              - label: {hidden: true, id: usage_f20, text: "", text_font: montserrat_20}
+              - label: {hidden: true, id: usage_f24, text: "", text_font: montserrat_24}
+              - label: {hidden: true, id: usage_f28, text: "", text_font: montserrat_28}
+              - label: {hidden: true, id: usage_f32, text: "", text_font: montserrat_32}
+              - label: {hidden: true, id: usage_fcompact, text: "", text_font: c7_condensed20}
+              # Feature holders: ESPHome only compiles the LVGL arc widget and flex layout in
+              # when the YAML uses them; usage.h creates its arcs and the chip row in C++.
+              - arc: {hidden: true, id: usage_arc_holder, adjustable: false}
+              - obj:
+                  hidden: true
+                  id: usage_flex_holder
+                  layout:
+                    type: flex
+                    flex_flow: ROW
+                  widgets:
+                    - label: {text: ""}

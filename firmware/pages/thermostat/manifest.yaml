@@ -1,0 +1,17 @@
+name: thermostat
+title: Thermostat
+description: Room climate with a comfort arc and optional humidity.
+rotate: true
+slots:
+  temperature: {type: number, required: true, doc: Measured temperature in the selected unit.}
+  humidity: {type: number, unit: '%', doc: Optional relative humidity from 0 to 100.}
+  label: {type: text, default: Living room, doc: Room heading.}
+  unit: {type: text, default: '°C', doc: 'Use °C or °F; measurements and setpoint must already use that unit.'}
+  setpoint: {type: number, doc: Optional target in the selected unit; display only.}
+  updated_at: {type: epoch, doc: Optional measurement time in Unix seconds; can only make freshness older.}
+headers: [climate.h, thermostat.h]
+hooks:
+  build: cyd_thermostat::build
+  render: cyd_thermostat::render
+  tick10: cyd_thermostat::tick10
+  status: cyd_thermostat::status

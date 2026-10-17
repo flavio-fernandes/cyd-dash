@@ -1,0 +1,33 @@
+[
+  {
+    "topic": "${usage_topic}",
+    "payload": {
+      "gauges": [
+        {
+          "label": "Plan A",
+          "used_pct": 38,
+          "resets_at": "now+7800",
+          "weekly_pct": 61,
+          "weekly_resets_at": "now+302400",
+          "cap_pct": 100,
+          "base_cap_pct": 60,
+          "donated_pct": 40,
+          "auth": "ok",
+          "updated_at": "now"
+        },
+        {
+          "label": "Plan B",
+          "used_pct": 84,
+          "resets_at": "now+1500",
+          "weekly_pct": 27,
+          "weekly_resets_at": "now+518400",
+          "cap_pct": 90,
+          "base_cap_pct": 90,
+          "donated_pct": 0,
+          "auth": "ok",
+          "updated_at": "now"
+        }
+      ]
+    }
+  }
+]

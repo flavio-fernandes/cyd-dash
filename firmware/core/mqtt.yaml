@@ -1,0 +1,33 @@
+mqtt:
+  id: broker
+  broker: ${mqtt_broker}
+  port: ${mqtt_port}
+  discovery: false
+  topic_prefix: ${topic_prefix}
+  reboot_timeout: ${mqtt_reboot_timeout}
+  log_topic: null
+  birth_message:
+    topic: ${topic_prefix}/status
+    payload: '{"online":true,"marker":"${marker}","state":"waiting"}'
+    retain: true
+  will_message:
+    topic: ${topic_prefix}/status
+    payload: '{"online":false}'
+    retain: true
+  on_connect:
+    - lambda: |-
+        // First connection is not a reconnect; successful subsequent connections are.
+        if (id(broker_seen)) ++id(reconnects);
+        id(broker_seen) = true;
+        id(disconnected_at) = 0;
+        id(broker_since) = millis();
+    - script.execute: publish_status
+  on_disconnect:
+    - lambda: id(disconnected_at) = millis(); id(broker_since) = millis();
+  on_message:
+    # Commands act exactly like their touch equivalents: both go through apply_cmd (core/ui.yaml).
+    - topic: ${topic_prefix}/cmd
+      then:
+        - script.execute:
+            id: apply_cmd
+            x: !lambda return x;

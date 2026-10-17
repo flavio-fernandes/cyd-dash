@@ -1,0 +1,17 @@
+# The font holders compile in the sizes used by example.h, in this order.
+lvgl:
+  pages:
+    - id: example_page
+      bg_color: 0x101820
+      widgets:
+        - obj:
+            id: example_root
+            width: 320
+            height: 240
+            pad_all: 0
+            border_width: 0
+            bg_opa: TRANSP
+            widgets:
+              - label: {hidden: true, text: "", text_font: montserrat_16}
+              - label: {hidden: true, text: "", text_font: montserrat_20}
+              - label: {hidden: true, text: "", text_font: montserrat_32}
