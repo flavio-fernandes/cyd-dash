@@ -30,7 +30,12 @@ for a raw temperature topic. The page never publishes a control command.
 
 The default view spans two hours in one-minute buckets. The last received value
 in each bucket wins; a burst cannot squeeze the time axis. Empty buckets are
-not invented, and gaps longer than two periods break the line. Collection
+not invented. The line breaks at gaps longer than twice the usual spacing of
+occupied buckets, with a minimum limit of two periods. The usual spacing is the
+lower median of the stored time steps, so a slow feed can draw a line while an
+isolated long outage still leaves a gap. With fewer than two samples the limit
+is two periods. The limit is recalculated when history changes, outside the draw
+callback, using a bounded 1920-byte stack array and no heap allocation. Collection
 continues while another page is visible. Incoming slots are sampled by the
 shared 100 ms clock, so multiple arrivals in one clock step coalesce to the last.
 A repeated equal reading still renews freshness and populates its new bucket.
@@ -72,7 +77,10 @@ it also occupies the text slot's dynamic string storage.
 The header is one band. The title and a status line (`Live - 0m ago`) share the
 top line. Below them sits the latest reading in 48 px digits with its unit right
 after it, then a small triangle: ▲ rising, ▼ falling, a short bar when steady.
-High and Low for the visible window sit on the right. The thermostat's
+High and Low for the visible window sit on the right. Readings with a magnitude
+of 1000 or more use whole numbers in both the large reading and High/Low; smaller
+readings keep one decimal place. The large reading stays on one line and truncates
+when it cannot fit, rather than wrapping onto the graph. The thermostat's
 digits-only font recipe drives the number; other labels are 20 px and 16 px.
 
 The graph uses the rest of the screen. Its line is smoothed and never overshoots

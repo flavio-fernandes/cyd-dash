@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cctype>
+#include <cstdio>
 
 namespace cyd_history_model {
 constexpr int CAPACITY = 241;
@@ -13,6 +14,11 @@ inline int64_t bucket(int64_t t, int period) {
   return (t < 0 && t % period ? q - 1 : q) * period;
 }
 struct Scale { float low, high, step; };
+// Keep the large reading and its range labels consistent without unnecessary decimals.
+inline void format_value(char *out, size_t size, float value) {
+  if (!std::isfinite(value)) std::snprintf(out, size, "--.-");
+  else std::snprintf(out, size, std::fabs(value) >= 1000 ? "%.0f" : "%.1f", double(value));
+}
 inline float nice(float v) {
   if (!(v > 0) || !std::isfinite(v)) return 1;
   float power = std::pow(10.0f, std::floor(std::log10(v)));
@@ -62,6 +68,18 @@ struct History {
   void range(float &low, float &high) const {
     low = high = count ? points[0].value : NAN;
     for (int i = 1; i < count; ++i) { low = std::min(low, points[i].value); high = std::max(high, points[i].value); }
+  }
+  // Infer cadence from occupied buckets, not from message bursts in one bucket. The lower
+  // median keeps an isolated outage from increasing the usual spacing. Call after changes,
+  // outside the drawing callback; the bounded scratch array uses 1920 bytes on the stack.
+  int64_t gap_limit() const {
+    if (count < 2) return int64_t(period) * 2;
+    int64_t steps[CAPACITY - 1];
+    int n = count - 1;
+    for (int i = 0; i < n; ++i) steps[i] = points[i + 1].time - points[i].time;
+    auto middle = steps + (n - 1) / 2;
+    std::nth_element(steps, middle, steps + n);
+    return std::max<int64_t>(period, *middle) * 2;
   }
 };
 // Strict bounded JSON number parser; no strings, nulls, booleans or partial acceptance.

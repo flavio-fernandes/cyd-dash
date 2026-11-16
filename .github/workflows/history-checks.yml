@@ -1,0 +1,104 @@
+name: History checks
+
+on:
+  pull_request:
+    paths:
+      - firmware/**
+      - tools/**
+      - tests/**
+      - docs/**
+      - .github/workflows/history-checks.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: history-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  tests-and-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: ghcr.io/esphome/esphome:2026.10.1
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install preview dependencies in the container
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libsdl2-dev pkg-config g++
+      - name: Configure neutral history fixtures
+        run: |
+          python3 - <<'PY'
+          import pathlib, secrets, yaml
+          site = yaml.safe_load(pathlib.Path('firmware/site.example.yaml').read_text())
+          site['cyd']['pages'] = ['device', 'history']
+          pathlib.Path('firmware/site.yaml').write_text(yaml.safe_dump(site))
+          pathlib.Path('firmware/secrets.yaml').write_text(yaml.safe_dump({'ota_password': secrets.token_urlsafe(24)}))
+          PY
+          cp firmware/bindings.history-slow.example.yaml firmware/bindings.yaml
+      - name: Run the full test suite
+        run: python3 -m unittest discover -s tests -v
+      - name: Render slow, outage, waiting, stale and large-negative readings
+        run: |
+          python3 tools/cyd_preview.py shot --page history --feed tools/examples/history-slow.json --out local/checks/slow.png --delay 3000
+          python3 tools/cyd_preview.py shot --no-build --page history --feed tools/examples/history-slow-gap.json --out local/checks/gap.png --delay 3000
+          python3 tools/cyd_preview.py shot --no-build --page history --feed tools/examples/history-waiting.json --out local/checks/waiting.png --delay 3000
+          python3 tools/cyd_preview.py shot --no-build --page history --feed tools/examples/history-slow-stale.json --out local/checks/stale.png --delay 3000
+          python3 tools/cyd_preview.py shot --no-build --page history --feed tools/examples/history-large-negative.json --out local/checks/negative.png --delay 3000
+      - name: Render the same slow feed before the fix
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          backup=$(mktemp -d)
+          cp firmware/pages/history/history.h "$backup/history.h"
+          cp firmware/pages/history/history_model.h "$backup/history_model.h"
+          trap 'cp "$backup/history.h" firmware/pages/history/history.h; cp "$backup/history_model.h" firmware/pages/history/history_model.h; rm -rf "$backup"' EXIT
+          git show "$BASE_SHA:firmware/pages/history/history.h" > firmware/pages/history/history.h
+          git show "$BASE_SHA:firmware/pages/history/history_model.h" > firmware/pages/history/history_model.h
+          python3 tools/cyd_preview.py shot --page history --feed tools/examples/history-slow.json --out local/checks/before.png --delay 3000
+      - name: Save preview screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: history-previews
+          path: local/checks/*.png
+          if-no-files-found: error
+          retention-days: 7
+
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container: ghcr.io/esphome/esphome:2026.10.1
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure neutral history fixtures
+        run: |
+          python3 - <<'PY'
+          import pathlib, secrets, yaml
+          site = yaml.safe_load(pathlib.Path('firmware/site.example.yaml').read_text())
+          site['cyd']['pages'] = ['device', 'history']
+          pathlib.Path('firmware/site.yaml').write_text(yaml.safe_dump(site))
+          pathlib.Path('firmware/secrets.yaml').write_text(yaml.safe_dump({'ota_password': secrets.token_urlsafe(24)}))
+          PY
+          cp firmware/bindings.history-slow.example.yaml firmware/bindings.yaml
+      - name: Compile history with device
+        run: python3 tools/cyd_build.py compile
+      - name: Compile history alone
+        run: |
+          python3 - <<'PY'
+          import pathlib, yaml
+          path = pathlib.Path('firmware/site.yaml')
+          site = yaml.safe_load(path.read_text())
+          site['cyd']['pages'] = ['history']
+          path.write_text(yaml.safe_dump(site))
+          PY
+          python3 tools/cyd_build.py compile
