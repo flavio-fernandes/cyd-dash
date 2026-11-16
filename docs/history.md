@@ -152,3 +152,12 @@ feeds too. The C++ model tests compile the actual firmware header with address
 and undefined-behavior sanitizers; they require a C++17 compiler. Preview refresh
 measurements describe desktop rendering, not display-bus performance or device
 free heap. Measure those on the device before drawing conclusions about load.
+
+For sparse readings with large values, use `firmware/bindings.history-slow.example.yaml`
+with `tools/examples/history-slow.json`. It seeds timestamped readings three minutes
+apart and delivers a live numeric string. `history-slow-gap.json` leaves a longer
+outage in the middle. These are synthetic examples, separate from your live topics.
+
+| Before: sparse readings and a wrapped number | Slow readings after the fix | A longer outage stays empty |
+| --- | --- | --- |
+| ![Before](images/history-slow-before.png) | ![Slow history](images/history-slow.png) | ![History with an outage](images/history-slow-gap.png) |
