@@ -37,9 +37,26 @@ int main() {
       slow.add(t, 100 + t / 60); slow.expire(t);
     }
     assert(slow.count > 1 && slow.count <= CAPACITY);
-    assert(slow.gap_limit() == spacing * 2);
+    bool joined[CAPACITY]; slow.connections(joined);
     for (int i = 1; i < slow.count; ++i)
-      assert(slow.points[i].time - slow.points[i - 1].time <= slow.gap_limit());
+      assert(joined[i] && slow.gap_limit(i) == spacing * 2);
+  }
+  // Check the transition BEFORE the dense seed expires, not only the four-day end state.
+  for (int spacing : {180, 300, 600}) {
+    History mixed;
+    for (int s = -7140; s <= 0; s += 60) mixed.add(s, 100);
+    for (int s = spacing; s <= 3600; s += spacing) {
+      mixed.add(s, 100 + s / 60); mixed.expire(s);
+      if (s == 1800 || s == 3600) {
+        bool joined[CAPACITY]; mixed.connections(joined);
+        int live_segments = 0;
+        for (int i = 1; i < mixed.count; ++i) {
+          if (mixed.points[i].time <= 0) continue;
+          assert(joined[i]); ++live_segments;
+        }
+        assert(live_segments == s / spacing);
+      }
+    }
   }
   // A five-minute feed with jitter and then a long outage: only the outage breaks the line.
   History slow;
@@ -48,24 +65,38 @@ int main() {
     t += 300 + (i % 3 - 1) * 17;
     slow.add(t, 100 + i); slow.expire(t);
   }
-  assert(slow.gap_limit() == 600);
+  bool joined[CAPACITY]; slow.connections(joined);
   for (int i = 1; i < slow.count; ++i)
-    assert(slow.points[i].time - slow.points[i - 1].time <= slow.gap_limit());
+    assert(joined[i] && slow.gap_limit(i) == 600);
   t += 2400; slow.add(t, 200); slow.expire(t);
-  assert(slow.gap_limit() == 600);
+  slow.connections(joined);
   int breaks = 0;
   for (int i = 1; i < slow.count; ++i)
-    breaks += slow.points[i].time - slow.points[i - 1].time > slow.gap_limit();
+    breaks += !joined[i];
   assert(breaks == 1);
+  // One reading during an outage must not bridge either side after the normal feed resumes.
+  History isolated;
+  for (int s = 0; s <= 1800; s += 60) isolated.add(s, s);
+  isolated.add(3600, 3600);
+  for (int s = 5400; s <= 7200; s += 60) isolated.add(s, s);
+  isolated.connections(joined); breaks = 0;
+  for (int i = 1; i < isolated.count; ++i) {
+    bool gap = isolated.points[i].time - isolated.points[i - 1].time > 120;
+    assert(joined[i] != gap); breaks += !joined[i];
+  }
+  assert(breaks == 2);
   // Fast arrivals coalesce into minute buckets and retain the old two-period limit.
   History fast;
-  assert(fast.gap_limit() == 120);
+  assert(fast.gap_limit(0) == 120);
   for (int i = 0; i <= 3600; i += 5) fast.add(i, i);
-  assert(fast.gap_limit() == 120);
-  fast.add(4200, 4200); assert(fast.gap_limit() == 120);
+  fast.connections(joined);
+  for (int i = 1; i < fast.count; ++i) assert(joined[i] && fast.gap_limit(i) == 120);
+  fast.add(4200, 4200); fast.connections(joined);
+  assert(!joined[fast.count - 1] && fast.gap_limit(fast.count - 1) == 120);
   History even;
   even.add(0, 0); even.add(60, 1); even.add(660, 2);
-  assert(even.gap_limit() == 120);  // lower median, not the average of cadence and outage
+  assert(even.gap_limit(2) == 120);  // lower median, not the average of cadence and outage
+  even.connections(joined); assert(joined[1] && !joined[2]);
   char text[16];
   for (auto example : {std::pair<float, const char *>{21.5f, "21.5"}, {999.0f, "999.0"},
                        {1000.0f, "1000"}, {20000.0f, "20000"}, {-20000.0f, "-20000"},

@@ -10,7 +10,7 @@ static std::string texts[12], state = "waiting";
 static uint32_t seen_at = 0, clock_at = 0, drawn_revision = UINT32_MAX, status_colour = 0, trend_colour = 0, dot_colour = 0xFFFFFF;
 static uint64_t clock_ms = 0;
 static int64_t epoch_now = -1, epoch_at = 0, drawn_end = INT64_MIN;
-static int64_t gap_limit = 120;
+static bool joined[cyd_history_model::CAPACITY]{};
 static bool seeded = false, stale = false, was_stale = false, was_visible = false, had_data = false;
 static int trend_dir = 2;  // 1 rising, -1 falling, 0 steady, 2 none
 static float warn = NAN, alert = NAN, data_low = 0, data_high = 1;
@@ -107,9 +107,9 @@ inline void fill(lv_layer_t *layer, int x1, int y1, int x2, int y2, uint32_t c, 
 inline void trace(lv_layer_t *layer, const lv_area_t &a, bool area, int lo, int hi) {
   for (int i = 1; i < history.count; ++i) {
     const auto &p = history.points[i - 1], &q = history.points[i];
-    // Empty time buckets stay empty rather than implying uninterrupted measurements.
-    if (q.time - p.time > gap_limit) continue;
-    bool last = i + 1 == history.count || history.points[i + 1].time - q.time > gap_limit;
+    // Join neighbors at their local cadence; leave longer interruptions empty.
+    if (!joined[i]) continue;
+    bool last = i + 1 == history.count || !joined[i + 1];
     int x0 = px(p.time), x1 = px(q.time), old_y = py(p.value);
     if (x1 < lo || x0 > hi + 1) continue;
     for (int x = x0; x <= x1; ++x) {
@@ -313,7 +313,7 @@ inline void render(const cyd_page::Ctx &ctx) {
   int64_t end = cyd_history_model::bucket(t, history.period);
   auto equal = [](float a, float b) { return a == b || (std::isnan(a) && std::isnan(b)); };
   if (drawn_revision != history.revision || end != drawn_end || stale != was_stale || next_axis.low != axis.low || next_axis.high != axis.high || !equal(warn, next_warn) || !equal(alert, next_alert)) {
-    if (drawn_revision != history.revision) gap_limit = history.gap_limit();
+    if (drawn_revision != history.revision) history.connections(joined);
     // A new time bucket while the graph is live: ease it one step to the left.
     if (drawn_end != INT64_MIN && end - drawn_end == history.period && !stale && sweep >= SWEEP_STEPS && history.count) {
       slide_from = slide_px = float(W - 1) * history.period / history.window; slide = SLIDE_STEPS;

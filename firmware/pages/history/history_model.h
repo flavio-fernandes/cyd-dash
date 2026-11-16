@@ -69,17 +69,25 @@ struct History {
     low = high = count ? points[0].value : NAN;
     for (int i = 1; i < count; ++i) { low = std::min(low, points[i].value); high = std::max(high, points[i].value); }
   }
-  // Infer cadence from occupied buckets, not from message bursts in one bucket. The lower
-  // median keeps an isolated outage from increasing the usual spacing. Call after changes,
-  // outside the drawing callback; the bounded scratch array uses 1920 bytes on the stack.
-  int64_t gap_limit() const {
-    if (count < 2) return int64_t(period) * 2;
-    int64_t steps[CAPACITY - 1];
-    int n = count - 1;
-    for (int i = 0; i < n; ++i) steps[i] = points[i + 1].time - points[i].time;
+  // Estimate cadence around the edge ending at i, rather than letting a dense old seed
+  // dominate slower live readings. The lower median rejects one or two isolated long gaps.
+  // Five int32_t steps use 20 bytes of stack. Expired history spans at most one day; clamp
+  // larger steps defensively for callers that have not expired their buffer yet.
+  int64_t gap_limit(int i) const {
+    if (i < 1 || i >= count) return int64_t(period) * 2;
+    int32_t steps[5];
+    int n = 0;
+    for (int j = std::max(1, i - 2); j <= std::min(count - 1, i + 2); ++j)
+      steps[n++] = int32_t(std::min<int64_t>(points[j].time - points[j - 1].time, INT32_MAX));
     auto middle = steps + (n - 1) / 2;
     std::nth_element(steps, middle, steps + n);
     return std::max<int64_t>(period, *middle) * 2;
+  }
+  // Cache once per revision, outside the draw callback. Entry i joins point i-1 to point i.
+  void connections(bool (&joined)[CAPACITY]) const {
+    std::fill(joined, joined + CAPACITY, false);
+    for (int i = 1; i < count; ++i)
+      joined[i] = points[i].time - points[i - 1].time <= gap_limit(i);
   }
 };
 // Strict bounded JSON number parser; no strings, nulls, booleans or partial acceptance.

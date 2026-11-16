@@ -31,11 +31,11 @@ for a raw temperature topic. The page never publishes a control command.
 The default view spans two hours in one-minute buckets. The last received value
 in each bucket wins; a burst cannot squeeze the time axis. Empty buckets are
 not invented. The line breaks at gaps longer than twice the usual spacing of
-occupied buckets, with a minimum limit of two periods. The usual spacing is the
-lower median of the stored time steps, so a slow feed can draw a line while an
-isolated long outage still leaves a gap. With fewer than two samples the limit
-is two periods. The limit is recalculated when history changes, outside the draw
-callback, using a bounded 1920-byte stack array and no heap allocation. Collection
+occupied buckets near each segment, with a minimum limit of two periods. The
+usual spacing is the lower median of up to five neighboring time steps. A feed
+that changes from one reading a minute to one every five minutes can therefore
+draw both parts, while a longer interruption still leaves a gap. More readings
+help establish the cadence at the newest edge. Collection
 continues while another page is visible. Incoming slots are sampled by the
 shared 100 ms clock, so multiple arrivals in one clock step coalesce to the last.
 A repeated equal reading still renews freshness and populates its new bucket.
@@ -156,8 +156,15 @@ free heap. Measure those on the device before drawing conclusions about load.
 For sparse readings with large values, use `firmware/bindings.history-slow.example.yaml`
 with `tools/examples/history-slow.json`. It seeds timestamped readings three minutes
 apart and delivers a live numeric string. `history-slow-gap.json` leaves a longer
-outage in the middle. These are synthetic examples, separate from your live topics.
+outage in the middle. `history-slow-stale.json` shows older readings, and
+`history-large-negative.json` checks a large negative value in the header.
+`history-seed-transition.json` shows a dense seed followed by slower live readings.
+These are synthetic examples, separate from your live topics.
 
 | Before: sparse readings and a wrapped number | Slow readings after the fix | A longer outage stays empty |
 | --- | --- | --- |
 | ![Before](images/history-slow-before.png) | ![Slow history](images/history-slow.png) | ![History with an outage](images/history-slow-gap.png) |
+
+A dense seed followed by slower readings:
+
+![A dense seed followed by slow live readings](images/history-seed-transition.png)
