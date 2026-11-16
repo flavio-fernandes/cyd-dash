@@ -10,6 +10,7 @@ static std::string texts[12], state = "waiting";
 static uint32_t seen_at = 0, clock_at = 0, drawn_revision = UINT32_MAX, status_colour = 0, trend_colour = 0, dot_colour = 0xFFFFFF;
 static uint64_t clock_ms = 0;
 static int64_t epoch_now = -1, epoch_at = 0, drawn_end = INT64_MIN;
+static bool joined[cyd_history_model::CAPACITY]{};
 static bool seeded = false, stale = false, was_stale = false, was_visible = false, had_data = false;
 static int trend_dir = 2;  // 1 rising, -1 falling, 0 steady, 2 none
 static float warn = NAN, alert = NAN, data_low = 0, data_high = 1;
@@ -106,9 +107,9 @@ inline void fill(lv_layer_t *layer, int x1, int y1, int x2, int y2, uint32_t c, 
 inline void trace(lv_layer_t *layer, const lv_area_t &a, bool area, int lo, int hi) {
   for (int i = 1; i < history.count; ++i) {
     const auto &p = history.points[i - 1], &q = history.points[i];
-    // Empty time buckets stay empty rather than implying uninterrupted measurements.
-    if (q.time - p.time > history.period * 2) continue;
-    bool last = i + 1 == history.count || history.points[i + 1].time - q.time > history.period * 2;
+    // Join neighbors at their local cadence; leave longer interruptions empty.
+    if (!joined[i]) continue;
+    bool last = i + 1 == history.count || !joined[i + 1];
     int x0 = px(p.time), x1 = px(q.time), old_y = py(p.value);
     if (x1 < lo || x0 > hi + 1) continue;
     for (int x = x0; x <= x1; ++x) {
@@ -198,7 +199,7 @@ inline void place_header() {
 }
 inline void show_hero() {
   char b[16];
-  if (std::isfinite(shown_value)) snprintf(b, sizeof b, "%.1f", shown_value); else snprintf(b, sizeof b, "--.-");
+  cyd_history_model::format_value(b, sizeof b, shown_value);
   if (set_text(hero, 1, b)) place_header();
 }
 inline void ingest() {
@@ -233,6 +234,8 @@ inline void build(lv_obj_t *root) {
   lv_obj_set_style_text_align(status_label, LV_TEXT_ALIGN_RIGHT, 0);
   hero = label(root, f48, HERO_X, HERO_Y, LV_SIZE_CONTENT, 0xFFFFFF);
   lv_obj_set_style_max_width(hero, 165, 0);
+  // LONG_DOT needs a one-line height as well as a width bound: never spill into the graph.
+  lv_obj_set_height(hero, f48->line_height);
   int unit_y = HERO_Y + baseline(f48, f20);
   unit = label(root, f20, HERO_X, unit_y, LV_SIZE_CONTENT, 0xAAB7C4);
   lv_obj_set_style_max_width(unit, 60, 0);
@@ -279,9 +282,16 @@ inline void render(const cyd_page::Ctx &ctx) {
   if (set_text(unit, 2, cyd_slots::text(CYD_SLOT_history_unit))) place_header();
   show_hero();
   float low, high; history.range(low, high);
-  if (history.count) snprintf(b, sizeof b, "High %.1f", high); else b[0] = 0;
+  char reading[24];
+  if (history.count) {
+    cyd_history_model::format_value(reading, sizeof reading, high);
+    snprintf(b, sizeof b, "High %s", reading);
+  } else b[0] = 0;
   set_text(high_label, 3, b);
-  if (history.count) snprintf(b, sizeof b, "Low %.1f", low); else b[0] = 0;
+  if (history.count) {
+    cyd_history_model::format_value(reading, sizeof reading, low);
+    snprintf(b, sizeof b, "Low %s", reading);
+  } else b[0] = 0;
   set_text(low_label, 4, b);
   set_text(placeholder, 5, history.count ? "" : "Waiting for a reading");
   set_text(hint, 6, history.count ? "" : "Listening for your topic");
@@ -303,6 +313,7 @@ inline void render(const cyd_page::Ctx &ctx) {
   int64_t end = cyd_history_model::bucket(t, history.period);
   auto equal = [](float a, float b) { return a == b || (std::isnan(a) && std::isnan(b)); };
   if (drawn_revision != history.revision || end != drawn_end || stale != was_stale || next_axis.low != axis.low || next_axis.high != axis.high || !equal(warn, next_warn) || !equal(alert, next_alert)) {
+    if (drawn_revision != history.revision) history.connections(joined);
     // A new time bucket while the graph is live: ease it one step to the left.
     if (drawn_end != INT64_MIN && end - drawn_end == history.period && !stale && sweep >= SWEEP_STEPS && history.count) {
       slide_from = slide_px = float(W - 1) * history.period / history.window; slide = SLIDE_STEPS;

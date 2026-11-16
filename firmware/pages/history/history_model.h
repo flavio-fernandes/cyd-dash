@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cctype>
+#include <cstdio>
 
 namespace cyd_history_model {
 constexpr int CAPACITY = 241;
@@ -13,6 +14,11 @@ inline int64_t bucket(int64_t t, int period) {
   return (t < 0 && t % period ? q - 1 : q) * period;
 }
 struct Scale { float low, high, step; };
+// Keep the large reading and its range labels consistent without unnecessary decimals.
+inline void format_value(char *out, size_t size, float value) {
+  if (!std::isfinite(value)) std::snprintf(out, size, "--.-");
+  else std::snprintf(out, size, std::fabs(value) >= 1000 ? "%.0f" : "%.1f", double(value));
+}
 inline float nice(float v) {
   if (!(v > 0) || !std::isfinite(v)) return 1;
   float power = std::pow(10.0f, std::floor(std::log10(v)));
@@ -62,6 +68,26 @@ struct History {
   void range(float &low, float &high) const {
     low = high = count ? points[0].value : NAN;
     for (int i = 1; i < count; ++i) { low = std::min(low, points[i].value); high = std::max(high, points[i].value); }
+  }
+  // Estimate cadence around the edge ending at i, rather than letting a dense old seed
+  // dominate slower live readings. The lower median rejects one or two isolated long gaps.
+  // Five int32_t steps use 20 bytes of stack. Expired history spans at most one day; clamp
+  // larger steps defensively for callers that have not expired their buffer yet.
+  int64_t gap_limit(int i) const {
+    if (i < 1 || i >= count) return int64_t(period) * 2;
+    int32_t steps[5];
+    int n = 0;
+    for (int j = std::max(1, i - 2); j <= std::min(count - 1, i + 2); ++j)
+      steps[n++] = int32_t(std::min<int64_t>(points[j].time - points[j - 1].time, INT32_MAX));
+    auto middle = steps + (n - 1) / 2;
+    std::nth_element(steps, middle, steps + n);
+    return std::max<int64_t>(period, *middle) * 2;
+  }
+  // Cache once per revision, outside the draw callback. Entry i joins point i-1 to point i.
+  void connections(bool (&joined)[CAPACITY]) const {
+    std::fill(joined, joined + CAPACITY, false);
+    for (int i = 1; i < count; ++i)
+      joined[i] = points[i].time - points[i - 1].time <= gap_limit(i);
   }
 };
 // Strict bounded JSON number parser; no strings, nulls, booleans or partial acceptance.

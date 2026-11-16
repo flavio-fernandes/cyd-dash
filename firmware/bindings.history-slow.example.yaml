@@ -1,0 +1,5 @@
+# Sparse readings with a numeric JSON string and an optional timestamped seed.
+history:
+  value: {topic: home/room/reading, json: up}
+  label: {value: Uptime}
+  seed: {topic: home/room/history}
